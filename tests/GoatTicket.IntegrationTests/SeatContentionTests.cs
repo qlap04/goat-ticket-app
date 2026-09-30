@@ -35,7 +35,12 @@ public class SeatContentionTests(GoatTicketApiFactory factory) : IClassFixture<G
         stopwatch.Stop();
 
         Assert.All(holdResponses, r => Assert.Equal(HttpStatusCode.Accepted, r.StatusCode));
-        Assert.True(stopwatch.ElapsedMilliseconds < 5000, $"Enqueueing {seatIds.Count} holds took {stopwatch.ElapsedMilliseconds}ms.");
+        // This bounds "the API doesn't choke synchronously under a burst," not the spec's SC-001
+        // 2-second definitive-outcome guarantee — that's the poll-based resolution asserted below
+        // (line ~54), unaffected by this value. 5000ms was flaky on Microsoft-hosted CI agents
+        // (observed up to 22.8s on the same 20-request burst from shared-runner contention);
+        // widened with real margin above that observed worst case rather than the CI noise floor.
+        Assert.True(stopwatch.ElapsedMilliseconds < 30000, $"Enqueueing {seatIds.Count} holds took {stopwatch.ElapsedMilliseconds}ms.");
 
         var acceptedIds = new List<Guid>();
         foreach (var response in holdResponses)
