@@ -6,9 +6,9 @@ pool:
   vmImage: "ubuntu-latest"
 
 stages:
-  # ===== 1. BUILD + CODE QUALITY + SECURITY SCAN (gộp) =====
+  # ===== 1. BUILD =====
   - stage: Build
-    displayName: "Build, Quality & Security"
+    displayName: "Build"
     jobs:
       - job: BuildJob
         steps:
@@ -21,6 +21,19 @@ stages:
             displayName: "Restore"
           - script: dotnet build GoatTicket.sln --no-restore --configuration Release
             displayName: "Build"
+
+  # ===== 2. QUALITY + SECURITY SCAN + UNIT TEST (gộp) =====
+  - stage: QualityAndTest
+    displayName: "Quality, Security & Unit Tests"
+    dependsOn: Build
+    jobs:
+      - job: QualityTestJob
+        steps:
+          - task: UseDotNet@2
+            inputs:
+              packageType: "sdk"
+              version: "8.x"
+            displayName: "Install .NET 8 SDK"
           - script: dotnet format GoatTicket.sln --verify-no-changes
             displayName: "dotnet format check"
           - script: dotnet list GoatTicket.sln package --vulnerable --include-transitive
@@ -32,18 +45,6 @@ stages:
               categories: "code"
               break: false
               publish: true
-
-  # ===== 2. UNIT TEST =====
-  - stage: UnitTest
-    displayName: "Unit Tests"
-    dependsOn: Build
-    jobs:
-      - job: UnitTestJob
-        steps:
-          - task: UseDotNet@2
-            inputs:
-              packageType: "sdk"
-              version: "8.x"
           - script: |
               dotnet test tests/GoatTicket.UnitTests/GoatTicket.UnitTests.csproj \
                 --configuration Release \
@@ -59,7 +60,7 @@ stages:
   # ===== 3. INTEGRATION TEST =====
   - stage: IntegrationTest
     displayName: "Integration Tests"
-    dependsOn: UnitTest
+    dependsOn: QualityAndTest
     jobs:
       - job: IntegrationTestJob
         steps:
