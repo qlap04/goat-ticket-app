@@ -1,0 +1,20 @@
+{
+  "version": "2.0",
+  "logging": {
+    "applicationInsights": {
+      "samplingSettings": {
+        "isEnabled": true,
+        "excludedTypes": "Request"
+      }
+    }
+  },
+  "extensions": {
+    "queues": {
+      "// batchSize/maxDequeueCount": "Shared by ALL queue-triggered functions in this Function App (seat-hold-queue, order-created, order-created-poison) — host.json queue settings are global, not per-queue. batchSize=1 is required for seat-hold-queue to keep the on-sale-moment concurrency window as small as possible (research.md §1); applying it to order-created too is an acceptable MVP tradeoff (slightly lower fulfillment throughput per instance, still scales via multiple instances). Splitting into separate Function Apps for independent tuning is a future optimization, not needed for launch (see tasks.md T039).",
+      "batchSize": 1,
+      "newBatchThreshold": 0,
+      "maxDequeueCount": 5,
+      "visibilityTimeout": "00:00:30"
+    }
+  }
+}

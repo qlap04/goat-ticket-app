@@ -1,0 +1,40 @@
+## .NET
+bin/
+obj/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+[Dd]ebug/
+[Rr]elease/
+artifacts/
+*.nupkg
+
+## Testing
+[Tt]est[Rr]esult*/
+coverage/
+*.trx
+
+## Rider / VS / VS Code
+.vs/
+.vscode/
+.idea/
+*.DotSettings.user
+
+## Specify
+.specify/
+specs/
+
+## Azure Functions
+local.settings.json
+bin/
+obj/
+
+## Secrets / local config
+appsettings.Local.json
+*.env
+.env
+
+## OS
+.DS_Store
+Thumbs.db
