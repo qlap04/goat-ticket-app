@@ -99,10 +99,9 @@ if (args.Contains("--seed"))
     var cosmosClient = services.GetRequiredService<CosmosClient>();
     var databaseId = builder.Configuration["Cosmos:DatabaseId"] ?? "GoatTicket";
     var containerId = builder.Configuration["Cosmos:ContainerId"] ?? "catalog";
-    var databaseResponse = await cosmosClient.CreateDatabaseIfNotExistsAsync(databaseId);
-    var containerResponse = await databaseResponse.Database.CreateContainerIfNotExistsAsync(containerId, "/type");
+    var container = await CosmosBootstrap.EnsureCatalogContainerAsync(cosmosClient, databaseId, containerId);
 
-    await CatalogSeeder.SeedAsync(db, containerResponse.Container);
+    await CatalogSeeder.SeedAsync(db, container);
 
     Log.Information("Seed complete: 20,000 seats + catalog documents.");
     return;

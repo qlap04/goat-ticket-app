@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Azure.Storage.Blobs;
 using Azure.Storage.Queues;
+using GoatTicket.Infrastructure.Catalog;
 using GoatTicket.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Hosting;
@@ -63,8 +64,7 @@ public class GoatTicketApiFactory : WebApplicationFactory<Program>, IAsyncLifeti
         await db.Database.MigrateAsync();
 
         var cosmosClient = scope.ServiceProvider.GetRequiredService<CosmosClient>();
-        var database = (await cosmosClient.CreateDatabaseIfNotExistsAsync("GoatTicket")).Database;
-        var container = (await database.CreateContainerIfNotExistsAsync("catalog", "/type")).Container;
+        var container = await CosmosBootstrap.EnsureCatalogContainerAsync(cosmosClient, "GoatTicket", "catalog");
 
         await GoatTicket.Infrastructure.Seed.CatalogSeeder.SeedAsync(db, container);
     }
@@ -103,7 +103,11 @@ public class GoatTicketApiFactory : WebApplicationFactory<Program>, IAsyncLifeti
                 // See AzureClients.CreateCosmosClient: the catalog POCOs use
                 // System.Text.Json's [JsonPropertyName], which the SDK's default serializer
                 // ignores without this.
-                UseSystemTextJsonSerializerWithOptions = JsonSerializerOptions.Default
+                UseSystemTextJsonSerializerWithOptions = JsonSerializerOptions.Default,
+                // The emulator running under Testcontainers on a loaded CI box can take well
+                // past the SDK's default request timeout to respond — bump it so slow-but-alive
+                // beats a flaky 408.
+                RequestTimeout = TimeSpan.FromSeconds(60)
             }));
 
             services.RemoveAll<BlobServiceClient>();

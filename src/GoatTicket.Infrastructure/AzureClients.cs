@@ -70,7 +70,11 @@ public static class AzureClients
                 // [JsonPropertyName], which the SDK's default (Newtonsoft-based) serializer does
                 // not honor — without this, "id"/"type" get serialized as "Id"/"Type" and the
                 // /type partition key stops matching.
-                UseSystemTextJsonSerializerWithOptions = JsonSerializerOptions.Default
+                UseSystemTextJsonSerializerWithOptions = JsonSerializerOptions.Default,
+                // The emulator running under Testcontainers on a loaded CI box can take well
+                // past the SDK's default request timeout to respond — bump it so slow-but-alive
+                // beats a flaky 408.
+                RequestTimeout = TimeSpan.FromSeconds(60)
             });
         }
 
