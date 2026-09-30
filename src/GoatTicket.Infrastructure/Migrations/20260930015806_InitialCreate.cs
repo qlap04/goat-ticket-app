@@ -51,8 +51,7 @@ namespace GoatTicket.Infrastructure.Migrations
                 name: "Seats",
                 columns: table => new
                 {
-                    Id = table.Column<long>(type: "bigint", nullable: false)
-                        .Annotation("SqlServer:Identity", "1, 1"),
+                    Id = table.Column<long>(type: "bigint", nullable: false),
                     Tier = table.Column<string>(type: "nvarchar(16)", maxLength: 16, nullable: false),
                     SectionLabel = table.Column<string>(type: "nvarchar(128)", maxLength: 128, nullable: false),
                     Status = table.Column<string>(type: "nvarchar(16)", maxLength: 16, nullable: false),

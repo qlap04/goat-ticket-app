@@ -12,8 +12,8 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace GoatTicket.Infrastructure.Migrations
 {
     [DbContext(typeof(GoatTicketDbContext))]
-    [Migration("20260930014346_MakeSeatIdNonIdentity")]
-    partial class MakeSeatIdNonIdentity
+    [Migration("20260930015806_InitialCreate")]
+    partial class InitialCreate
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
