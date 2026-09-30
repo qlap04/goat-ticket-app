@@ -51,6 +51,7 @@ stages:
           - task: MicrosoftSecurityDevOps@1
             displayName: "MSDO - Code Scan"
             inputs:
+              tools: "credscan"
               categories: "code"
               break: false
               publish: true
