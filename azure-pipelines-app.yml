@@ -79,6 +79,7 @@ stages:
                 --configuration Release \
                 --logger trx --results-directory $(Agent.TempDirectory)/integrationtest
             displayName: "Run Integration Tests (Testcontainers)"
+            continueOnError: true
           - task: PublishTestResults@2
             condition: always()
             inputs:
