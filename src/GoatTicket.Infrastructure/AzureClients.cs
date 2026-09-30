@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Azure.Identity;
 using Azure.Storage.Blobs;
 using Azure.Storage.Queues;
@@ -64,11 +65,19 @@ public static class AzureClients
                 HttpClientFactory = () => new HttpClient(new HttpClientHandler
                 {
                     ServerCertificateCustomValidationCallback = HttpClientHandler.DangerousAcceptAnyServerCertificateValidator
-                })
+                }),
+                // The catalog POCOs (EventDocument, TicketTierDocument) use System.Text.Json's
+                // [JsonPropertyName], which the SDK's default (Newtonsoft-based) serializer does
+                // not honor — without this, "id"/"type" get serialized as "Id"/"Type" and the
+                // /type partition key stops matching.
+                UseSystemTextJsonSerializerWithOptions = JsonSerializerOptions.Default
             });
         }
 
-        return new CosmosClient(endpoint, new DefaultAzureCredential());
+        return new CosmosClient(endpoint, new DefaultAzureCredential(), new CosmosClientOptions
+        {
+            UseSystemTextJsonSerializerWithOptions = JsonSerializerOptions.Default
+        });
     }
 
     /// <summary>

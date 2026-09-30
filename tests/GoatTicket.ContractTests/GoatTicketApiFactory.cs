@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Azure.Storage.Blobs;
 using Azure.Storage.Queues;
 using GoatTicket.Infrastructure.Persistence;
@@ -25,7 +26,11 @@ namespace GoatTicket.ContractTests;
 /// </summary>
 public class GoatTicketApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
 {
-    private readonly MsSqlContainer _sql = new MsSqlBuilder().Build();
+    // Pinned to 2022: the default 2019-CU18 image crashes on startup (SIGABRT) under QEMU
+    // emulation on Apple Silicon Docker hosts.
+    private readonly MsSqlContainer _sql = new MsSqlBuilder()
+        .WithImage("mcr.microsoft.com/mssql/server:2022-latest")
+        .Build();
     private readonly CosmosDbContainer _cosmos = new CosmosDbBuilder().Build();
     // Pinned to latest: Testcontainers.Azurite 3.10.0's default image predates the storage API
     // version (2024-08-04) that Azure.Storage.Blobs 12.21.2 requests.
@@ -94,7 +99,11 @@ public class GoatTicketApiFactory : WebApplicationFactory<Program>, IAsyncLifeti
                 HttpClientFactory = () => new HttpClient(new HttpClientHandler
                 {
                     ServerCertificateCustomValidationCallback = HttpClientHandler.DangerousAcceptAnyServerCertificateValidator
-                })
+                }),
+                // See AzureClients.CreateCosmosClient: the catalog POCOs use
+                // System.Text.Json's [JsonPropertyName], which the SDK's default serializer
+                // ignores without this.
+                UseSystemTextJsonSerializerWithOptions = JsonSerializerOptions.Default
             }));
 
             services.RemoveAll<BlobServiceClient>();
