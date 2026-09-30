@@ -6,9 +6,9 @@ pool:
   vmImage: "ubuntu-latest"
 
 stages:
-  # ===== 1. BUILD =====
+  # ===== 1. BUILD + CODE QUALITY + SECURITY SCAN (gộp) =====
   - stage: Build
-    displayName: "Build"
+    displayName: "Build, Quality & Security"
     jobs:
       - job: BuildJob
         steps:
@@ -21,30 +21,10 @@ stages:
             displayName: "Restore"
           - script: dotnet build GoatTicket.sln --no-restore --configuration Release
             displayName: "Build"
-
-  # ===== 2. CODE QUALITY =====
-  - stage: CodeQuality
-    displayName: "Code Quality"
-    dependsOn: Build
-    jobs:
-      - job: QualityJob
-        steps:
-          - task: UseDotNet@2
-            inputs:
-              packageType: "sdk"
-              version: "8.x"
           - script: dotnet format GoatTicket.sln --verify-no-changes
             displayName: "dotnet format check"
           - script: dotnet list GoatTicket.sln package --vulnerable --include-transitive
             displayName: "Check for vulnerable packages"
-
-  # ===== 3. SECURITY SCAN =====
-  - stage: SecurityScan
-    displayName: "Security Scan"
-    dependsOn: CodeQuality
-    jobs:
-      - job: ScanJob
-        steps:
           - task: MicrosoftSecurityDevOps@1
             displayName: "MSDO - Code Scan"
             inputs:
@@ -53,10 +33,10 @@ stages:
               break: false
               publish: true
 
-  # ===== 4. UNIT TEST =====
+  # ===== 2. UNIT TEST =====
   - stage: UnitTest
     displayName: "Unit Tests"
-    dependsOn: SecurityScan
+    dependsOn: Build
     jobs:
       - job: UnitTestJob
         steps:
@@ -76,13 +56,19 @@ stages:
               testResultsFiles: "$(Agent.TempDirectory)/unittest/*.trx"
               testRunTitle: "Unit Tests"
 
-  # ===== 5. INTEGRATION TEST =====
+  # ===== 3. INTEGRATION TEST =====
   - stage: IntegrationTest
     displayName: "Integration Tests"
     dependsOn: UnitTest
     jobs:
       - job: IntegrationTestJob
         steps:
+          - script: |
+              docker system prune -a --volumes -f
+              sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+                /usr/local/share/boost /usr/share/swift /opt/hostedtoolcache
+              df -h /
+            displayName: "Free up disk space on agent"
           - task: UseDotNet@2
             inputs:
               packageType: "sdk"
@@ -99,7 +85,7 @@ stages:
               testResultsFiles: "$(Agent.TempDirectory)/integrationtest/*.trx"
               testRunTitle: "Integration Tests"
 
-  # ===== 6. PUBLISH =====
+  # ===== 4. PUBLISH =====
   - stage: Publish
     displayName: "Publish Artifacts"
     dependsOn: IntegrationTest
@@ -127,7 +113,7 @@ stages:
           - publish: $(Build.ArtifactStagingDirectory)
             artifact: drop
 
-  # ===== 7. DEPLOY DEV =====
+  # ===== 5. DEPLOY DEV =====
   - stage: DeployDev
     displayName: "Deploy to Dev"
     dependsOn: Publish
@@ -156,7 +142,7 @@ stages:
                     appName: "func-goat-worker-dev"
                     package: "$(Pipeline.Workspace)/drop/func"
 
-  # ===== 8. MANUAL GATE — confirm before touching Prod =====
+  # ===== 6. MANUAL GATE — confirm before touching Prod =====
   - stage: ConfirmProd
     displayName: "Confirm Deploy to Prod?"
     dependsOn: DeployDev
@@ -173,7 +159,7 @@ stages:
               instructions: "Do you want to deploy this build to PRODUCTION? Review the Dev deployment above before confirming."
               onTimeout: "reject"
 
-  # ===== 9. DEPLOY PROD =====
+  # ===== 7. DEPLOY PROD =====
   - stage: DeployProd
     displayName: "Deploy to Prod"
     dependsOn: ConfirmProd
