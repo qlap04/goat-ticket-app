@@ -24,6 +24,8 @@ public class GoatTicketDbContext(DbContextOptions<GoatTicketDbContext> options) 
         modelBuilder.Entity<Seat>(b =>
         {
             b.HasKey(s => s.Id);
+            // Seat.Id is application-assigned (seed data + tests set explicit ids), not DB-generated.
+            b.Property(s => s.Id).ValueGeneratedNever();
             b.Property(s => s.SectionLabel).IsRequired().HasMaxLength(128);
             b.Property(s => s.Tier).HasConversion<string>().HasMaxLength(16);
             b.Property(s => s.Status).HasConversion<string>().HasMaxLength(16);
