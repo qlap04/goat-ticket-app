@@ -18,6 +18,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
+using LicenseType = QuestPDF.Infrastructure.LicenseType;
 
 namespace GoatTicket.IntegrationTests;
 
@@ -31,6 +32,11 @@ namespace GoatTicket.IntegrationTests;
 /// </summary>
 public class BookTicketEndToEndTests(GoatTicketApiFactory factory) : IClassFixture<GoatTicketApiFactory>, IAsyncLifetime
 {
+    // Functions/Program.cs sets this, but that host never actually runs in this test — see the
+    // class remarks above — so OrderFulfillmentProcessor's QuestPDF call would otherwise hit an
+    // unlicensed-library exception.
+    static BookTicketEndToEndTests() => QuestPDF.Settings.License = LicenseType.Community;
+
     private readonly IContainer _mailhog = new ContainerBuilder()
         .WithImage("mailhog/mailhog:latest")
         .WithPortBinding(8025, true)
