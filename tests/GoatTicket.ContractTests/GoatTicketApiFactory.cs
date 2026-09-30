@@ -27,7 +27,11 @@ public class GoatTicketApiFactory : WebApplicationFactory<Program>, IAsyncLifeti
 {
     private readonly MsSqlContainer _sql = new MsSqlBuilder().Build();
     private readonly CosmosDbContainer _cosmos = new CosmosDbBuilder().Build();
-    private readonly AzuriteContainer _azurite = new AzuriteBuilder().Build();
+    // Pinned to latest: Testcontainers.Azurite 3.10.0's default image predates the storage API
+    // version (2024-08-04) that Azure.Storage.Blobs 12.21.2 requests.
+    private readonly AzuriteContainer _azurite = new AzuriteBuilder()
+        .WithImage("mcr.microsoft.com/azure-storage/azurite:latest")
+        .Build();
 
     public string SqlConnectionString => _sql.GetConnectionString();
     public string CosmosConnectionString => _cosmos.GetConnectionString();

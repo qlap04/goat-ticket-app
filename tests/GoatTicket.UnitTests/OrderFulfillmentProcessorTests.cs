@@ -27,8 +27,16 @@ public class OrderFulfillmentProcessorTests : IAsyncLifetime
 {
     private const string ContainerName = "tickets";
 
-    private readonly MsSqlContainer _sql = new MsSqlBuilder().Build();
-    private readonly AzuriteContainer _azurite = new AzuriteBuilder().Build();
+    // Pinned to 2022: the default 2019-CU18 image crashes on startup (SIGABRT) under QEMU
+    // emulation on Apple Silicon Docker hosts.
+    private readonly MsSqlContainer _sql = new MsSqlBuilder()
+        .WithImage("mcr.microsoft.com/mssql/server:2022-latest")
+        .Build();
+    // Pinned to latest: Testcontainers.Azurite 3.10.0's default image predates the storage API
+    // version (2024-08-04) that Azure.Storage.Blobs 12.21.2 requests.
+    private readonly AzuriteContainer _azurite = new AzuriteBuilder()
+        .WithImage("mcr.microsoft.com/azure-storage/azurite:latest")
+        .Build();
 
     public async Task InitializeAsync()
     {
