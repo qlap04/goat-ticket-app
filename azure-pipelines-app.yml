@@ -1,0 +1,206 @@
+name: "App Deploy - $(Build.SourceBranchName)"
+
+trigger:
+  branches:
+    include:
+      - develop
+
+pool:
+  vmImage: "ubuntu-latest"
+
+stages:
+  # ===== 1. BUILD =====
+  - stage: Build
+    displayName: "Build"
+    jobs:
+      - job: BuildJob
+        steps:
+          - task: UseDotNet@2
+            inputs:
+              packageType: "sdk"
+              version: "8.x"
+            displayName: "Install .NET 8 SDK"
+          - script: dotnet restore GoatTicket.sln
+            displayName: "Restore"
+          - script: dotnet build GoatTicket.sln --no-restore --configuration Release
+            displayName: "Build"
+
+  # ===== 2. CODE QUALITY =====
+  - stage: CodeQuality
+    displayName: "Code Quality"
+    dependsOn: Build
+    jobs:
+      - job: QualityJob
+        steps:
+          - task: UseDotNet@2
+            inputs:
+              packageType: "sdk"
+              version: "8.x"
+          - script: dotnet format GoatTicket.sln --verify-no-changes
+            displayName: "dotnet format check"
+          - script: dotnet list GoatTicket.sln package --vulnerable --include-transitive
+            displayName: "Check for vulnerable packages"
+
+  # ===== 3. SECURITY SCAN =====
+  - stage: SecurityScan
+    displayName: "Security Scan"
+    dependsOn: CodeQuality
+    jobs:
+      - job: ScanJob
+        steps:
+          - task: MicrosoftSecurityDevOps@1
+            displayName: "MSDO - Code Scan"
+            inputs:
+              categories: "code"
+              break: false
+              publish: true
+
+  # ===== 4. UNIT TEST =====
+  - stage: UnitTest
+    displayName: "Unit Tests"
+    dependsOn: SecurityScan
+    jobs:
+      - job: UnitTestJob
+        steps:
+          - task: UseDotNet@2
+            inputs:
+              packageType: "sdk"
+              version: "8.x"
+          - script: |
+              dotnet test tests/GoatTicket.UnitTests/GoatTicket.UnitTests.csproj \
+                --configuration Release \
+                --logger trx --results-directory $(Agent.TempDirectory)/unittest
+            displayName: "Run Unit Tests"
+          - task: PublishTestResults@2
+            condition: always()
+            inputs:
+              testResultsFormat: "VSTest"
+              testResultsFiles: "$(Agent.TempDirectory)/unittest/*.trx"
+              testRunTitle: "Unit Tests"
+
+  # ===== 5. INTEGRATION TEST =====
+  - stage: IntegrationTest
+    displayName: "Integration Tests"
+    dependsOn: UnitTest
+    jobs:
+      - job: IntegrationTestJob
+        steps:
+          - task: UseDotNet@2
+            inputs:
+              packageType: "sdk"
+              version: "8.x"
+          - script: |
+              dotnet test tests/GoatTicket.IntegrationTests/GoatTicket.IntegrationTests.csproj \
+                --configuration Release \
+                --logger trx --results-directory $(Agent.TempDirectory)/integrationtest
+            displayName: "Run Integration Tests (Testcontainers)"
+          - task: PublishTestResults@2
+            condition: always()
+            inputs:
+              testResultsFormat: "VSTest"
+              testResultsFiles: "$(Agent.TempDirectory)/integrationtest/*.trx"
+              testRunTitle: "Integration Tests"
+
+  # ===== 6. PUBLISH =====
+  - stage: Publish
+    displayName: "Publish Artifacts"
+    dependsOn: IntegrationTest
+    jobs:
+      - job: PublishJob
+        steps:
+          - task: UseDotNet@2
+            inputs:
+              packageType: "sdk"
+              version: "8.x"
+          - task: DotNetCoreCLI@2
+            displayName: "Publish API"
+            inputs:
+              command: "publish"
+              publishWebProjects: false
+              projects: "src/GoatTicket.Api/GoatTicket.Api.csproj"
+              arguments: "--configuration Release --output $(Build.ArtifactStagingDirectory)/api"
+          - task: DotNetCoreCLI@2
+            displayName: "Publish Function"
+            inputs:
+              command: "publish"
+              publishWebProjects: false
+              projects: "src/GoatTicket.Functions/GoatTicket.Functions.csproj"
+              arguments: "--configuration Release --output $(Build.ArtifactStagingDirectory)/func"
+          - publish: $(Build.ArtifactStagingDirectory)
+            artifact: drop
+
+  # ===== 7. DEPLOY DEV =====
+  - stage: DeployDev
+    displayName: "Deploy to Dev"
+    dependsOn: Publish
+    jobs:
+      - deployment: DeployAppDev
+        environment: "goat-dev"
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - checkout: self
+                - download: current
+                  artifact: drop
+                - task: AzureWebApp@1
+                  displayName: "Deploy App Service (dev)"
+                  inputs:
+                    azureSubscription: "goat-ticket-connection"
+                    appType: "webAppLinux"
+                    appName: "app-goat-api-dev"
+                    package: "$(Pipeline.Workspace)/drop/api"
+                - task: AzureFunctionApp@2
+                  displayName: "Deploy Function App (dev)"
+                  inputs:
+                    azureSubscription: "goat-ticket-connection"
+                    appType: "functionAppLinux"
+                    appName: "func-goat-worker-dev"
+                    package: "$(Pipeline.Workspace)/drop/func"
+
+  # ===== 8. MANUAL GATE — confirm before touching Prod =====
+  - stage: ConfirmProd
+    displayName: "Confirm Deploy to Prod?"
+    dependsOn: DeployDev
+    jobs:
+      - job: WaitForValidation
+        pool: server
+        timeoutInMinutes: 4320
+        steps:
+          - task: ManualValidation@0
+            timeoutInMinutes: 4320
+            inputs:
+              notifyUsers: |
+                qlap04@gmail.com
+              instructions: "Do you want to deploy this build to PRODUCTION? Review the Dev deployment above before confirming."
+              onTimeout: "reject"
+
+  # ===== 9. DEPLOY PROD =====
+  - stage: DeployProd
+    displayName: "Deploy to Prod"
+    dependsOn: ConfirmProd
+    condition: succeeded()
+    jobs:
+      - deployment: DeployAppProd
+        environment: "goat-prod"
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - checkout: self
+                - download: current
+                  artifact: drop
+                - task: AzureWebApp@1
+                  displayName: "Deploy App Service (prod)"
+                  inputs:
+                    azureSubscription: "goat-ticket-connection"
+                    appType: "webAppLinux"
+                    appName: "app-goat-api-prod"
+                    package: "$(Pipeline.Workspace)/drop/api"
+                - task: AzureFunctionApp@2
+                  displayName: "Deploy Function App (prod)"
+                  inputs:
+                    azureSubscription: "goat-ticket-connection"
+                    appType: "functionAppLinux"
+                    appName: "func-goat-worker-prod"
+                    package: "$(Pipeline.Workspace)/drop/func"
