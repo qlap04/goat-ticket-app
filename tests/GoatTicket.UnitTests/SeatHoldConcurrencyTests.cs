@@ -15,7 +15,11 @@ namespace GoatTicket.UnitTests;
 /// </summary>
 public class SeatHoldConcurrencyTests : IAsyncLifetime
 {
-    private readonly MsSqlContainer _sqlContainer = new MsSqlBuilder().Build();
+    // Pinned to 2022 explicitly: the default 2019-CU18 image crashes on startup (SIGABRT) under
+    // QEMU emulation on Apple Silicon Docker hosts.
+    private readonly MsSqlContainer _sqlContainer = new MsSqlBuilder()
+        .WithImage("mcr.microsoft.com/mssql/server:2022-latest")
+        .Build();
 
     public async Task InitializeAsync()
     {
@@ -68,6 +72,14 @@ public class SeatHoldConcurrencyTests : IAsyncLifetime
                 SectionLabel = $"Test Seat {seatId}",
                 Status = SeatStatus.Available
             });
+            // HeldByUserId has an FK to Users.Id, so every synthetic user attempting a hold
+            // needs a real row here first.
+            seedDb.Users.AddRange(Enumerable.Range(0, concurrentRequests).Select(i => new User
+            {
+                Id = $"user-{seatId}-{i}",
+                Email = $"user-{seatId}-{i}@example.com",
+                DisplayName = $"Test User {seatId}-{i}"
+            }));
             await seedDb.SaveChangesAsync();
         }
 
