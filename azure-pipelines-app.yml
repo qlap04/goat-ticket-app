@@ -22,7 +22,7 @@ stages:
           - script: dotnet build GoatTicket.sln --no-restore --configuration Release
             displayName: "Build"
 
-  # ===== 2. QUALITY + SECURITY SCAN + UNIT TEST (gộp) =====
+  # ===== 2. QUALITY + SECURITY SCAN + UNIT TEST =====
   - stage: QualityAndTest
     displayName: "Quality, Security & Unit Tests"
     dependsOn: Build
@@ -87,10 +87,11 @@ stages:
               testResultsFiles: "$(Agent.TempDirectory)/integrationtest/*.trx"
               testRunTitle: "Integration Tests"
 
-  # ===== 4. PUBLISH =====
+  # ===== 4. PUBLISH  =====
   - stage: Publish
     displayName: "Publish Artifacts"
     dependsOn: IntegrationTest
+    condition: succeededOrFailed()
     jobs:
       - job: PublishJob
         steps:
@@ -105,6 +106,8 @@ stages:
               publishWebProjects: false
               projects: "src/GoatTicket.Api/GoatTicket.Api.csproj"
               arguments: "--configuration Release --output $(Build.ArtifactStagingDirectory)/api"
+              zipAfterPublish: true
+              modifyOutputPath: false
           - task: DotNetCoreCLI@2
             displayName: "Publish Function"
             inputs:
@@ -112,10 +115,12 @@ stages:
               publishWebProjects: false
               projects: "src/GoatTicket.Functions/GoatTicket.Functions.csproj"
               arguments: "--configuration Release --output $(Build.ArtifactStagingDirectory)/func"
+              zipAfterPublish: true
+              modifyOutputPath: false
           - publish: $(Build.ArtifactStagingDirectory)
             artifact: drop
 
-  # ===== 5. DEPLOY DEV =====
+  # ===== 5. DEPLOY DEV ( file .zip) =====
   - stage: DeployDev
     displayName: "Deploy to Dev"
     dependsOn: Publish
@@ -135,14 +140,16 @@ stages:
                     azureSubscription: "goat-ticket-connection"
                     appType: "webAppLinux"
                     appName: "app-goat-api-dev"
-                    package: "$(Pipeline.Workspace)/drop/api"
+                    package: "$(Pipeline.Workspace)/drop/api/*.zip"
+                    deploymentMethod: "zipDeploy"
                 - task: AzureFunctionApp@2
                   displayName: "Deploy Function App (dev)"
                   inputs:
                     azureSubscription: "goat-ticket-connection"
                     appType: "functionAppLinux"
                     appName: "func-goat-worker-dev"
-                    package: "$(Pipeline.Workspace)/drop/func"
+                    package: "$(Pipeline.Workspace)/drop/func/*.zip"
+                    deploymentMethod: "zipDeploy"
 
   # ===== 6. MANUAL GATE — confirm before touching Prod =====
   - stage: ConfirmProd
@@ -182,11 +189,13 @@ stages:
                     azureSubscription: "goat-ticket-connection"
                     appType: "webAppLinux"
                     appName: "app-goat-api-prod"
-                    package: "$(Pipeline.Workspace)/drop/api"
+                    package: "$(Pipeline.Workspace)/drop/api/*.zip"
+                    deploymentMethod: "zipDeploy"
                 - task: AzureFunctionApp@2
                   displayName: "Deploy Function App (prod)"
                   inputs:
                     azureSubscription: "goat-ticket-connection"
                     appType: "functionAppLinux"
                     appName: "func-goat-worker-prod"
-                    package: "$(Pipeline.Workspace)/drop/func"
+                    package: "$(Pipeline.Workspace)/drop/func/*.zip"
+                    deploymentMethod: "zipDeploy"
