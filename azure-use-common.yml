@@ -20,6 +20,12 @@ steps:
   - checkout: self
   - checkout: InfraRepo
 
-  - template: deploy/templates/deploy-infra.yml@InfraRepo
-    parameters:
-      environment: dev
+  - script: |
+      echo "=== Pipeline.Workspace ==="
+      ls -la $(Pipeline.Workspace)
+      echo ""
+      echo "=== Build.SourcesDirectory ==="
+      ls -la $(Build.SourcesDirectory)
+      echo ""
+      echo "=== Tìm main.bicep ở đâu ==="
+      find $(Pipeline.Workspace) -name "main.bicep" 2>/dev/null
