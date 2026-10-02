@@ -20,12 +20,12 @@ steps:
   - checkout: self
   - checkout: InfraRepo
 
-  - script: |
-      echo "=== Pipeline.Workspace ==="
-      ls -la $(Pipeline.Workspace)
-      echo ""
-      echo "=== Build.SourcesDirectory ==="
-      ls -la $(Build.SourcesDirectory)
-      echo ""
-      echo "=== Tìm main.bicep ở đâu ==="
-      find $(Pipeline.Workspace) -name "main.bicep" 2>/dev/null
+  # ===== Infra deploy
+  - template: deploy/templates/deploy-infra.yml@InfraRepo
+    parameters:
+      environment: dev
+
+  - template: deploy/templates/common.yml
+
+  - script: echo "App-specific deploy steps continue here..."
+    displayName: "Continue with app deployment"
