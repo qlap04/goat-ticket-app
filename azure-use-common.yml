@@ -25,7 +25,7 @@ steps:
     parameters:
       environment: dev
 
-  - template: deploy/templates/common.yml
+  - template: deploy/templates/demo.yml
 
   - script: echo "App-specific deploy steps continue here..."
     displayName: "Continue with app deployment"
