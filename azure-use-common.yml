@@ -1,4 +1,4 @@
-name: "Demo Pipeline Using Shared Template"
+name: "Demo Pipeline - Deploy Infra from App Repo"
 
 trigger: none
 
@@ -13,8 +13,13 @@ resources:
       ref: dev
       endpoint: "qlap04"
 
+variables:
+  - group: goat-ticket-secrets-dev
+
 steps:
   - checkout: self
+  - checkout: InfraRepo
 
-  - template: deploy/templates/demo.yml # APP
-  - template: deploy/templates/demo.yml@InfraRepo #  INFRA
+  - template: deploy/templates/deploy-infra.yml@InfraRepo
+    parameters:
+      environment: dev
