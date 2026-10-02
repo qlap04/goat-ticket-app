@@ -30,6 +30,7 @@ stages:
       - job: DeployInfraJob
         steps:
           - checkout: InfraRepo
+          
           - task: AzureCLI@2
             displayName: "Deploy infrastructure to the development environment"
             inputs:

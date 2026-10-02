@@ -15,5 +15,7 @@ resources:
 
 steps:
   - checkout: self
-  - template: deploy/pipeline/templates/common.yml@InfraRepo
-  - script: echo "App-specific steps continue here..."
+  - checkout: InfraRepo
+
+  - template: deploy/templates/demo.yml # APP
+  - template: deploy/templates/demo.yml@InfraRepo #  INFRA
