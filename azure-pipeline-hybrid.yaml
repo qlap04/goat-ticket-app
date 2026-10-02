@@ -1,0 +1,72 @@
+name: "App Demo Deploy - $(Build.SourceBranchName)"
+
+trigger: none
+
+pool:
+  vmImage: "ubuntu-latest"
+
+resources:
+  repositories:
+    - repository: InfraRepo
+      type: github
+      name: qlap04/goat-ticket-infra
+      ref: dev
+      endpoint: "GitHub-ServiceConnection"
+
+parameters:
+  - name: deployInfraFirst
+    displayName: "Deploy infrastructure before deploying the app?"
+    type: boolean
+    default: false
+
+variables:
+  - group: goat-ticket-secrets-dev
+
+extends:
+  template: deploy/pipeline/templates/demo-with-infra.yml@InfraRepo
+  parameters:
+    deployInfraFirst: ${{ parameters.deployInfraFirst }}
+    appDeploySteps:
+      - task: UseDotNet@2
+        inputs:
+          packageType: "sdk"
+          version: "8.x"
+        displayName: "Install .NET 8 SDK"
+
+      - task: DotNetCoreCLI@2
+        displayName: "Publish API"
+        inputs:
+          command: "publish"
+          publishWebProjects: false
+          projects: "src/GoatTicket.Api/GoatTicket.Api.csproj"
+          arguments: "--configuration Release --output $(Build.ArtifactStagingDirectory)/api"
+          zipAfterPublish: true
+          modifyOutputPath: false
+
+      - task: DotNetCoreCLI@2
+        displayName: "Publish Function"
+        inputs:
+          command: "publish"
+          publishWebProjects: false
+          projects: "src/GoatTicket.Functions/GoatTicket.Functions.csproj"
+          arguments: "--configuration Release --output $(Build.ArtifactStagingDirectory)/func"
+          zipAfterPublish: true
+          modifyOutputPath: false
+
+      - task: AzureWebApp@1
+        displayName: "Deploy App Service"
+        inputs:
+          azureSubscription: "goat-ticket-connection"
+          appType: "webAppLinux"
+          appName: "app-goat-api-dev"
+          package: "$(Build.ArtifactStagingDirectory)/api/*.zip"
+          deploymentMethod: "zipDeploy"
+
+      - task: AzureFunctionApp@2
+        displayName: "Deploy Function App"
+        inputs:
+          azureSubscription: "goat-ticket-connection"
+          appType: "functionAppLinux"
+          appName: "func-goat-worker-dev"
+          package: "$(Build.ArtifactStagingDirectory)/func/*.zip"
+          deploymentMethod: "zipDeploy"

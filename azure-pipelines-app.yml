@@ -17,8 +17,10 @@ stages:
               packageType: "sdk"
               version: "8.x"
             displayName: "Install .NET 8 SDK"
+
           - script: dotnet restore GoatTicket.sln
             displayName: "Restore"
+
           - script: dotnet build GoatTicket.sln --no-restore --configuration Release
             displayName: "Build"
 

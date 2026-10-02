@@ -1,0 +1,97 @@
+# azure-pipelines-demo.yml
+trigger: none
+
+pool:
+  vmImage: "ubuntu-latest"
+
+parameters:
+  - name: deployInfraFirst
+    displayName: "Deploy infrastructure before deploying the app?"
+    type: boolean
+    default: false
+
+resources:
+  repositories:
+    - repository: InfraRepo
+      type: github
+      name: qlap04/goat-ticket-infra
+      ref: dev
+      endpoint: "GitHub-ServiceConnection"
+
+variables:
+  - group: goat-ticket-secrets-dev
+
+stages:
+  # ===== STAGE 1: DEPLOY INFRA (OPTIONAL, chỉ chạy nếu toggle = true) =====
+  - stage: DeployInfra
+    displayName: "Deploy infrastructure"
+    condition: eq('${{ parameters.deployInfraFirst }}', 'true')
+    jobs:
+      - job: DeployInfraJob
+        steps:
+          - checkout: InfraRepo
+          - task: AzureCLI@2
+            displayName: "Deploy infrastructure to the development environment"
+            inputs:
+              azureSubscription: "goat-ticket-connection"
+              scriptType: "bash"
+              scriptLocation: "scriptPath"
+              scriptPath: "$(Build.SourcesDirectory)/InfraRepo/deploy/script/deploy-environment.sh"
+              arguments: "dev $(Build.SourcesDirectory)/InfraRepo/deploy/variables/dev.bicepparam"
+            env:
+              TICKET_QR_SIGNING_KEY_VALUE: $(ticketQrSigningKeyValue)
+              KEY_VAULT_CERT_SECRET_URI: $(keyVaultCertSecretUri)
+
+  # ===== STAGE 2: DEPLOY CODE (luôn chạy, build + publish + deploy App Service/Function) =====
+  - stage: DeployCode
+    displayName: "Deploy application code"
+    dependsOn: DeployInfra
+    condition: always()
+    jobs:
+      - job: BuildAndDeploy
+        steps:
+          - checkout: self
+
+          - task: UseDotNet@2
+            inputs:
+              packageType: "sdk"
+              version: "8.x"
+            displayName: "Install .NET 8 SDK"
+
+          - task: DotNetCoreCLI@2
+            displayName: "Publish API"
+            inputs:
+              command: "publish"
+              publishWebProjects: false
+              projects: "src/GoatTicket.Api/GoatTicket.Api.csproj"
+              arguments: "--configuration Release --output $(Build.ArtifactStagingDirectory)/api"
+              zipAfterPublish: true
+              modifyOutputPath: false
+
+          - task: DotNetCoreCLI@2
+            displayName: "Publish Function"
+            inputs:
+              command: "publish"
+              publishWebProjects: false
+              projects: "src/GoatTicket.Functions/GoatTicket.Functions.csproj"
+              arguments: "--configuration Release --output $(Build.ArtifactStagingDirectory)/func"
+              zipAfterPublish: true
+              modifyOutputPath: false
+
+          - task: AzureWebApp@1
+            displayName: "Deploy App Service"
+            inputs:
+              azureSubscription: "goat-ticket-connection"
+              appType: "webAppLinux"
+              appName: "app-goat-api-dev"
+              package: "$(Build.ArtifactStagingDirectory)/api/*.zip"
+              deploymentMethod: "zipDeploy"
+
+          - task: AzureFunctionApp@2
+            displayName: "Deploy Function App"
+            inputs:
+              azureSubscription: "goat-ticket-connection"
+              appType: "functionAppLinux"
+              appName: "func-goat-worker-dev"
+              package: "$(Build.ArtifactStagingDirectory)/func/*.zip"
+              deploymentMethod: "zipDeploy"
