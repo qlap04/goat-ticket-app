@@ -11,9 +11,9 @@ resources:
       type: github
       name: qlap04/goat-ticket-infra
       ref: dev
-      endpoint: "GitHub-ServiceConnection"
+      endpoint: "qlap04"
 
 steps:
-  - checkout: self 
+  - checkout: self
   - template: deploy/pipeline/templates/common.yml@InfraRepo
   - script: echo "App-specific steps continue here..."
