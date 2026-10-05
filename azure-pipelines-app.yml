@@ -1,203 +1,191 @@
-name: "App Deploy - $(Build.SourceBranchName)"
+name: "App Delivery - $(Build.SourceBranchName) - $(Date:yyyyMMdd)$(Rev:.r)"
 
-trigger: none
+trigger:
+  branches:
+    include:
+      - develop
+      - main
+      - release/*
+      - hotfix/*
+
+pr: none
+
+parameters:
+  - name: deployInfraAll
+    displayName: "Deploy infrastructure first (asks for confirmation per environment)"
+    type: boolean
+    default: false
+  - name: hotfixEnvironment
+    displayName: "Hotfix branches only: target environment"
+    type: string
+    default: dev
+    values: [dev, sit, uat, preprod, prod]
+
+resources:
+  repositories:
+    - repository: InfraRepo
+      type: github
+      name: qlap04/goat-ticket-infra
+      ref: dev
+      endpoint: qlap04
 
 pool:
-  vmImage: "ubuntu-latest"
+  vmImage: ubuntu-latest
+
+variables:
+  - group: goat-ticket-secrets-dev
+  - name: mockTarget
+    value: dev
 
 stages:
-  # ===== 1. BUILD =====
+  # ===== Build =====
   - stage: Build
-    displayName: "Build"
+    displayName: "Build and test application"
     jobs:
-      - job: BuildJob
+      - job: BuildAndTest
+        displayName: "Build, check and unit test"
         steps:
+          - checkout: self
           - task: UseDotNet@2
-            inputs:
-              packageType: "sdk"
-              version: "8.x"
             displayName: "Install .NET 8 SDK"
-
-          - script: dotnet restore GoatTicket.sln
-            displayName: "Restore"
-
-          - script: dotnet build GoatTicket.sln --no-restore --configuration Release
-            displayName: "Build"
-
-  # ===== 2. QUALITY + SECURITY SCAN + UNIT TEST =====
-  - stage: QualityAndTest
-    displayName: "Quality, Security & Unit Tests"
-    dependsOn: Build
-    jobs:
-      - job: QualityTestJob
-        steps:
-          - task: UseDotNet@2
             inputs:
-              packageType: "sdk"
-              version: "8.x"
-            displayName: "Install .NET 8 SDK"
-          - script: dotnet format GoatTicket.sln --verify-no-changes
-            displayName: "dotnet format check"
-          - script: dotnet list GoatTicket.sln package --vulnerable --include-transitive
-            displayName: "Check for vulnerable packages"
+              packageType: sdk
+              version: 8.x
+          - task: DotNetCoreCLI@2
+            displayName: "Restore packages"
+            inputs:
+              command: restore
+              projects: GoatTicket.sln
+          - task: DotNetCoreCLI@2
+            displayName: "Build solution"
+            inputs:
+              command: build
+              projects: GoatTicket.sln
+              arguments: --configuration Release --no-restore
+          - task: DotNetCoreCLI@2
+            displayName: "Check code formatting"
+            inputs:
+              command: custom
+              custom: format
+              arguments: GoatTicket.sln --verify-no-changes
+          - task: DotNetCoreCLI@2
+            displayName: "Check packages for known vulnerabilities"
+            inputs:
+              command: custom
+              custom: list
+              arguments: GoatTicket.sln package --vulnerable --include-transitive
           - task: MicrosoftSecurityDevOps@1
-            displayName: "MSDO - Code Scan"
+            displayName: "Scan code for exposed credentials"
             inputs:
-              tools: "credscan"
-              categories: "code"
+              tools: credscan
+              categories: code
               break: false
               publish: true
-          - script: |
-              dotnet test tests/GoatTicket.UnitTests/GoatTicket.UnitTests.csproj \
-                --configuration Release \
-                --logger trx --results-directory $(Agent.TempDirectory)/unittest
-            displayName: "Run Unit Tests"
-          - task: PublishTestResults@2
-            condition: always()
+          - task: DotNetCoreCLI@2
+            displayName: "Run unit tests"
             inputs:
-              testResultsFormat: "VSTest"
-              testResultsFiles: "$(Agent.TempDirectory)/unittest/*.trx"
-              testRunTitle: "Unit Tests"
+              command: test
+              projects: tests/GoatTicket.UnitTests/GoatTicket.UnitTests.csproj
+              arguments: --configuration Release
+          - task: DotNetCoreCLI@2
+            displayName: "Package API"
+            inputs:
+              command: publish
+              publishWebProjects: false
+              projects: src/GoatTicket.Api/GoatTicket.Api.csproj
+              arguments: --configuration Release --output $(Build.ArtifactStagingDirectory)/api
+              zipAfterPublish: true
+              modifyOutputPath: false
+          - task: DotNetCoreCLI@2
+            displayName: "Package Function App"
+            inputs:
+              command: publish
+              publishWebProjects: false
+              projects: src/GoatTicket.Functions/GoatTicket.Functions.csproj
+              arguments: --configuration Release --output $(Build.ArtifactStagingDirectory)/func
+              zipAfterPublish: true
+              modifyOutputPath: false
+          - publish: $(Build.ArtifactStagingDirectory)
+            artifact: drop
+            displayName: "Publish build artifact"
 
-  # ===== 3. INTEGRATION TEST =====
-  - stage: IntegrationTest
-    displayName: "Integration Tests"
-    dependsOn: QualityAndTest
+  - stage: IntegrationTests
+    displayName: "Run integration tests"
+    dependsOn: Build
     jobs:
-      - job: IntegrationTestJob
+      - job: IntegrationTests
+        displayName: "Run integration tests against containers"
         steps:
+          - checkout: self
           - script: |
               docker system prune -a --volumes -f
               sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
                 /usr/local/share/boost /usr/share/swift /opt/hostedtoolcache
               df -h /
-            displayName: "Free up disk space on agent"
+            displayName: "Free disk space on the agent"
           - task: UseDotNet@2
+            displayName: "Install .NET 8 SDK"
             inputs:
-              packageType: "sdk"
-              version: "8.x"
-          - script: |
-              dotnet test tests/GoatTicket.IntegrationTests/GoatTicket.IntegrationTests.csproj \
-                --configuration Release \
-                --logger trx --results-directory $(Agent.TempDirectory)/integrationtest
-            displayName: "Run Integration Tests (Testcontainers)"
+              packageType: sdk
+              version: 8.x
+          - task: DotNetCoreCLI@2
+            displayName: "Run integration tests"
             continueOnError: true
-          - task: PublishTestResults@2
-            condition: always()
             inputs:
-              testResultsFormat: "VSTest"
-              testResultsFiles: "$(Agent.TempDirectory)/integrationtest/*.trx"
-              testRunTitle: "Integration Tests"
+              command: test
+              projects: tests/GoatTicket.IntegrationTests/GoatTicket.IntegrationTests.csproj
+              arguments: --configuration Release
 
-  # ===== 4. PUBLISH  =====
-  - stage: Publish
-    displayName: "Publish Artifacts"
-    dependsOn: IntegrationTest
-    condition: succeededOrFailed()
-    jobs:
-      - job: PublishJob
-        steps:
-          - task: UseDotNet@2
-            inputs:
-              packageType: "sdk"
-              version: "8.x"
-          - task: DotNetCoreCLI@2
-            displayName: "Publish API"
-            inputs:
-              command: "publish"
-              publishWebProjects: false
-              projects: "src/GoatTicket.Api/GoatTicket.Api.csproj"
-              arguments: "--configuration Release --output $(Build.ArtifactStagingDirectory)/api"
-              zipAfterPublish: true
-              modifyOutputPath: false
-          - task: DotNetCoreCLI@2
-            displayName: "Publish Function"
-            inputs:
-              command: "publish"
-              publishWebProjects: false
-              projects: "src/GoatTicket.Functions/GoatTicket.Functions.csproj"
-              arguments: "--configuration Release --output $(Build.ArtifactStagingDirectory)/func"
-              zipAfterPublish: true
-              modifyOutputPath: false
-          - publish: $(Build.ArtifactStagingDirectory)
-            artifact: drop
+  # ===== develop: DEV =====
+  - ${{ if eq(variables['Build.SourceBranch'], 'refs/heads/develop') }}:
+      - template: deploy/templates/deploy-env-stage.yml
+        parameters:
+          environment: dev
+          displayName: "development"
+          target: ${{ variables.mockTarget }}
+          dependsOn: IntegrationTests
+          deployInfraAll: ${{ parameters.deployInfraAll }}
 
-  # ===== 5. DEPLOY DEV ( file .zip) =====
-  - stage: DeployDev
-    displayName: "Deploy to Dev"
-    dependsOn: Publish
-    jobs:
-      - deployment: DeployAppDev
-        environment: "goat-dev"
-        strategy:
-          runOnce:
-            deploy:
-              steps:
-                - checkout: self
-                - download: current
-                  artifact: drop
-                - task: AzureWebApp@1
-                  displayName: "Deploy App Service (dev)"
-                  inputs:
-                    azureSubscription: "goat-ticket-connection"
-                    appType: "webAppLinux"
-                    appName: "app-goat-api-dev"
-                    package: "$(Pipeline.Workspace)/drop/api/*.zip"
-                    deploymentMethod: "zipDeploy"
-                - task: AzureFunctionApp@2
-                  displayName: "Deploy Function App (dev)"
-                  inputs:
-                    azureSubscription: "goat-ticket-connection"
-                    appType: "functionAppLinux"
-                    appName: "func-goat-worker-dev"
-                    package: "$(Pipeline.Workspace)/drop/func/*.zip"
-                    deploymentMethod: "zipDeploy"
+  # ===== release/*: SIT, rồi UAT =====
+  - ${{ if startsWith(variables['Build.SourceBranch'], 'refs/heads/release/') }}:
+      - template: deploy/templates/deploy-env-stage.yml
+        parameters:
+          environment: sit
+          displayName: "system integration testing (SIT)"
+          target: ${{ variables.mockTarget }}
+          dependsOn: IntegrationTests
+          deployInfraAll: ${{ parameters.deployInfraAll }}
+      - template: deploy/templates/deploy-env-stage.yml
+        parameters:
+          environment: uat
+          displayName: "user acceptance testing (UAT)"
+          target: ${{ variables.mockTarget }}
+          dependsOn: Deploy_sit
+          deployInfraAll: ${{ parameters.deployInfraAll }}
 
-  # ===== 6. MANUAL GATE — confirm before touching Prod =====
-  - stage: ConfirmProd
-    displayName: "Confirm Deploy to Prod?"
-    dependsOn: DeployDev
-    jobs:
-      - job: WaitForValidation
-        pool: server
-        timeoutInMinutes: 4320
-        steps:
-          - task: ManualValidation@0
-            timeoutInMinutes: 4320
-            inputs:
-              notifyUsers: |
-                qlap04@gmail.com
-              instructions: "Do you want to deploy this build to PRODUCTION? Review the Dev deployment above before confirming."
-              onTimeout: "reject"
+  # ===== main: Pre-PROD, rồi PROD =====
+  - ${{ if eq(variables['Build.SourceBranch'], 'refs/heads/main') }}:
+      - template: deploy/templates/deploy-env-stage.yml
+        parameters:
+          environment: preprod
+          displayName: "pre-production"
+          target: ${{ variables.mockTarget }}
+          dependsOn: IntegrationTests
+          deployInfraAll: ${{ parameters.deployInfraAll }}
+      - template: deploy/templates/deploy-env-stage.yml
+        parameters:
+          environment: prod
+          displayName: "production"
+          target: ${{ variables.mockTarget }}
+          dependsOn: Deploy_preprod
+          deployInfraAll: ${{ parameters.deployInfraAll }}
 
-  # ===== 7. DEPLOY PROD =====
-  - stage: DeployProd
-    displayName: "Deploy to Prod"
-    dependsOn: ConfirmProd
-    condition: succeeded()
-    jobs:
-      - deployment: DeployAppProd
-        environment: "goat-prod"
-        strategy:
-          runOnce:
-            deploy:
-              steps:
-                - checkout: self
-                - download: current
-                  artifact: drop
-                - task: AzureWebApp@1
-                  displayName: "Deploy App Service (prod)"
-                  inputs:
-                    azureSubscription: "goat-ticket-connection"
-                    appType: "webAppLinux"
-                    appName: "app-goat-api-prod"
-                    package: "$(Pipeline.Workspace)/drop/api/*.zip"
-                    deploymentMethod: "zipDeploy"
-                - task: AzureFunctionApp@2
-                  displayName: "Deploy Function App (prod)"
-                  inputs:
-                    azureSubscription: "goat-ticket-connection"
-                    appType: "functionAppLinux"
-                    appName: "func-goat-worker-prod"
-                    package: "$(Pipeline.Workspace)/drop/func/*.zip"
-                    deploymentMethod: "zipDeploy"
+  # ===== hotfix/*: một môi trường chọn tay, mặc định dev =====
+  - ${{ if startsWith(variables['Build.SourceBranch'], 'refs/heads/hotfix/') }}:
+      - template: deploy/templates/deploy-env-stage.yml
+        parameters:
+          environment: ${{ parameters.hotfixEnvironment }}
+          displayName: "${{ parameters.hotfixEnvironment }} (hotfix)"
+          target: ${{ variables.mockTarget }}
+          dependsOn: IntegrationTests
+          deployInfraAll: ${{ parameters.deployInfraAll }}
