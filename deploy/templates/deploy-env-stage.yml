@@ -1,13 +1,19 @@
 parameters:
-  - name: environment
+  - name: environment # dev, sit, uat, preprod, prod
     type: string
   - name: displayName
     type: string
-  - name: target
+  - name: target # mock: every environment deploys to dev resources
     type: string
   - name: dependsOn
     type: object
     default: []
+  - name: previousStage # stage that runs right before this one
+    type: string
+  - name: branchMatch # runtime expression: which branch normally owns this stage
+    type: string
+  - name: hotfixEnvironment
+    type: string
   - name: deployInfraAll
     type: boolean
     default: false
@@ -16,8 +22,22 @@ stages:
   - stage: Deploy_${{ parameters.environment }}
     displayName: "Deliver to ${{ parameters.displayName }}"
     dependsOn: ${{ parameters.dependsOn }}
+    # The stage always appears in the pipeline; this condition decides whether it runs or shows as Skipped.
+    # A skipped previous stage must not block this one (release skips dev, main skips dev to uat).
+    condition: >-
+      and(
+        in(dependencies.IntegrationTests.result, 'Succeeded', 'SucceededWithIssues'),
+        in(dependencies.${{ parameters.previousStage }}.result, 'Succeeded', 'SucceededWithIssues', 'Skipped'),
+        or(
+          ${{ parameters.branchMatch }},
+          and(
+            startsWith(variables['Build.SourceBranch'], 'refs/heads/hotfix/'),
+            eq('${{ parameters.hotfixEnvironment }}', '${{ parameters.environment }}')
+          )
+        )
+      )
     jobs:
-    
+      # Optional infrastructure deployment: three-step flow lives in the infra repo
       - ${{ if eq(parameters.deployInfraAll, true) }}:
           - template: deploy/templates/deploy-infra-jobs.yml@InfraRepo
             parameters:
@@ -28,14 +48,7 @@ stages:
         displayName: "Deploy application to ${{ parameters.displayName }}"
         environment: goat-${{ parameters.environment }}
         ${{ if eq(parameters.deployInfraAll, true) }}:
-          dependsOn:
-            - InfraChecks_${{ parameters.environment }}
-            - InfraDeploy_${{ parameters.environment }}
-          condition: >-
-            and(
-              in(dependencies.InfraChecks_${{ parameters.environment }}.result, 'Succeeded', 'SucceededWithIssues'),
-              in(dependencies.InfraDeploy_${{ parameters.environment }}.result, 'Succeeded', 'Skipped')
-            )
+          dependsOn: InfraDeploy_${{ parameters.environment }}
         strategy:
           runOnce:
             deploy:

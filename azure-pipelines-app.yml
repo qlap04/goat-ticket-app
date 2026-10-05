@@ -12,7 +12,7 @@ pr: none
 
 parameters:
   - name: deployInfraAll
-    displayName: "Deploy infrastructure first (asks for confirmation per environment)"
+    displayName: "Deploy infrastructure before the application (every active environment)"
     type: boolean
     default: false
   - name: hotfixEnvironment
@@ -34,11 +34,10 @@ pool:
 
 variables:
   - group: goat-ticket-secrets-dev
-  - name: mockTarget
-    value: dev
 
 stages:
-  # ===== Build =====
+  # Build once, every environment reuses the same artifact.
+  # The two jobs run in parallel on separate agents.
   - stage: Build
     displayName: "Build and test application"
     jobs:
@@ -109,14 +108,11 @@ stages:
             artifact: drop
             displayName: "Publish build artifact"
 
-  - stage: IntegrationTests
-    displayName: "Run integration tests"
-    dependsOn: Build
-    jobs:
       - job: IntegrationTests
         displayName: "Run integration tests against containers"
         steps:
           - checkout: self
+          # This cleanup removes preinstalled SDKs, so it must stay on its own agent
           - script: |
               docker system prune -a --volumes -f
               sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
@@ -130,62 +126,65 @@ stages:
               version: 8.x
           - task: DotNetCoreCLI@2
             displayName: "Run integration tests"
-            continueOnError: true
+            continueOnError: true # Known flaky: Cosmos emulator cold start on CI
             inputs:
               command: test
               projects: tests/GoatTicket.IntegrationTests/GoatTicket.IntegrationTests.csproj
               arguments: --configuration Release
 
-  # ===== develop: DEV =====
-  - ${{ if eq(variables['Build.SourceBranch'], 'refs/heads/develop') }}:
-      - template: deploy/templates/deploy-env-stage.yml
-        parameters:
-          environment: dev
-          displayName: "development"
-          target: ${{ variables.mockTarget }}
-          dependsOn: IntegrationTests
-          deployInfraAll: ${{ parameters.deployInfraAll }}
+  # All five environments are always defined. The branch decides which ones run;
+  # the rest show as Skipped. Mock: every environment uses dev resources (target: dev).
+  - template: deploy/templates/deploy-env-stage.yml
+    parameters:
+      environment: dev
+      displayName: "development"
+      target: dev
+      dependsOn: [Build]
+      previousStage: Build
+      branchMatch: "eq(variables['Build.SourceBranch'], 'refs/heads/develop')"
+      hotfixEnvironment: ${{ parameters.hotfixEnvironment }}
+      deployInfraAll: ${{ parameters.deployInfraAll }}
 
-  # ===== release/*: SIT, UAT =====
-  - ${{ if startsWith(variables['Build.SourceBranch'], 'refs/heads/release/') }}:
-      - template: deploy/templates/deploy-env-stage.yml
-        parameters:
-          environment: sit
-          displayName: "system integration testing (SIT)"
-          target: ${{ variables.mockTarget }}
-          dependsOn: IntegrationTests
-          deployInfraAll: ${{ parameters.deployInfraAll }}
-      - template: deploy/templates/deploy-env-stage.yml
-        parameters:
-          environment: uat
-          displayName: "user acceptance testing (UAT)"
-          target: ${{ variables.mockTarget }}
-          dependsOn: Deploy_sit
-          deployInfraAll: ${{ parameters.deployInfraAll }}
+  - template: deploy/templates/deploy-env-stage.yml
+    parameters:
+      environment: sit
+      displayName: "system integration testing (SIT)"
+      target: dev
+      dependsOn: [Build, Deploy_dev]
+      previousStage: Deploy_dev
+      branchMatch: "startsWith(variables['Build.SourceBranch'], 'refs/heads/release/')"
+      hotfixEnvironment: ${{ parameters.hotfixEnvironment }}
+      deployInfraAll: ${{ parameters.deployInfraAll }}
 
-  # ===== main: Pre-PROD, -> PROD =====
-  - ${{ if eq(variables['Build.SourceBranch'], 'refs/heads/main') }}:
-      - template: deploy/templates/deploy-env-stage.yml
-        parameters:
-          environment: preprod
-          displayName: "pre-production"
-          target: ${{ variables.mockTarget }}
-          dependsOn: IntegrationTests
-          deployInfraAll: ${{ parameters.deployInfraAll }}
-      - template: deploy/templates/deploy-env-stage.yml
-        parameters:
-          environment: prod
-          displayName: "production"
-          target: ${{ variables.mockTarget }}
-          dependsOn: Deploy_preprod
-          deployInfraAll: ${{ parameters.deployInfraAll }}
+  - template: deploy/templates/deploy-env-stage.yml
+    parameters:
+      environment: uat
+      displayName: "user acceptance testing (UAT)"
+      target: dev
+      dependsOn: [Build, Deploy_sit]
+      previousStage: Deploy_sit
+      branchMatch: "startsWith(variables['Build.SourceBranch'], 'refs/heads/release/')"
+      hotfixEnvironment: ${{ parameters.hotfixEnvironment }}
+      deployInfraAll: ${{ parameters.deployInfraAll }}
 
-  # ===== hotfix/*: choose one env, default dev =====
-  - ${{ if startsWith(variables['Build.SourceBranch'], 'refs/heads/hotfix/') }}:
-      - template: deploy/templates/deploy-env-stage.yml
-        parameters:
-          environment: ${{ parameters.hotfixEnvironment }}
-          displayName: "${{ parameters.hotfixEnvironment }} (hotfix)"
-          target: ${{ variables.mockTarget }}
-          dependsOn: IntegrationTests
-          deployInfraAll: ${{ parameters.deployInfraAll }}
+  - template: deploy/templates/deploy-env-stage.yml
+    parameters:
+      environment: preprod
+      displayName: "pre-production"
+      target: dev
+      dependsOn: [Build, Deploy_uat]
+      previousStage: Deploy_uat
+      branchMatch: "eq(variables['Build.SourceBranch'], 'refs/heads/main')"
+      hotfixEnvironment: ${{ parameters.hotfixEnvironment }}
+      deployInfraAll: ${{ parameters.deployInfraAll }}
+
+  - template: deploy/templates/deploy-env-stage.yml
+    parameters:
+      environment: prod
+      displayName: "production"
+      target: dev
+      dependsOn: [Build, Deploy_preprod]
+      previousStage: Deploy_preprod
+      branchMatch: "eq(variables['Build.SourceBranch'], 'refs/heads/main')"
+      hotfixEnvironment: ${{ parameters.hotfixEnvironment }}
+      deployInfraAll: ${{ parameters.deployInfraAll }}
