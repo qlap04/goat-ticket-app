@@ -22,11 +22,10 @@ stages:
   - stage: Deploy_${{ parameters.environment }}
     displayName: "Deliver to ${{ parameters.displayName }}"
     dependsOn: ${{ parameters.dependsOn }}
-    # The stage always appears in the pipeline; this condition decides whether it runs or shows as Skipped.
-    # A skipped previous stage must not block this one (release skips dev, main skips dev to uat).
+  
     condition: >-
       and(
-        in(dependencies.IntegrationTests.result, 'Succeeded', 'SucceededWithIssues'),
+        in(dependencies.Build.result, 'Succeeded', 'SucceededWithIssues'),
         in(dependencies.${{ parameters.previousStage }}.result, 'Succeeded', 'SucceededWithIssues', 'Skipped'),
         or(
           ${{ parameters.branchMatch }},
