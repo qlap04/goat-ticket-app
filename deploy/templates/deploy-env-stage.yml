@@ -1,19 +1,26 @@
 parameters:
   - name: environment # dev, sit, uat, preprod, prod
     type: string
+
   - name: displayName
     type: string
+
   - name: target # mock: every environment deploys to dev resources
     type: string
+
   - name: dependsOn
     type: object
     default: []
+
   - name: previousStage # stage that runs right before this one
     type: string
+
   - name: branchMatch # runtime expression: which branch normally owns this stage
     type: string
+
   - name: hotfixEnvironment
     type: string
+
   - name: deployInfraAll
     type: boolean
     default: false
@@ -54,6 +61,7 @@ stages:
               steps:
                 - download: current
                   artifact: drop
+                  
                 - task: AzureWebApp@1
                   displayName: "Deploy API to App Service"
                   inputs:
@@ -62,6 +70,7 @@ stages:
                     appName: app-goat-api-${{ parameters.target }}
                     package: $(Pipeline.Workspace)/drop/api/*.zip
                     deploymentMethod: zipDeploy
+
                 - task: AzureFunctionApp@2
                   displayName: "Deploy worker to Function App"
                   inputs:

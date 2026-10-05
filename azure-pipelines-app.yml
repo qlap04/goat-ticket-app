@@ -15,6 +15,7 @@ parameters:
     displayName: "Deploy infrastructure before the application (every active environment)"
     type: boolean
     default: false
+    
   - name: hotfixEnvironment
     displayName: "Hotfix branches only: target environment"
     type: string
