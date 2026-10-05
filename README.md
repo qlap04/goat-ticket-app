@@ -85,4 +85,4 @@ Non-secret settings (tenant/client IDs, resource endpoints, queue/container name
 `appsettings.json` / `appsettings.Development.json` / `local.settings.json`. Actual secrets
 (`JwtSigningKey`, `TicketQrSigningKey`) are never stored in this repo — outside `Development`
 they are fetched from Key Vault via `DefaultAzureCredential` (see `research.md` §2, §6, §10 and
-the project constitution's Principle III).
+the project constitution's Principle III). 

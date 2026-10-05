@@ -36,8 +36,7 @@ variables:
   - group: goat-ticket-secrets-dev
 
 stages:
-  # Build once, every environment reuses the same artifact.
-  # The two jobs run in parallel on separate agents.
+  # BUILD & TEST
   - stage: Build
     displayName: "Build and test application"
     jobs:
@@ -45,34 +44,40 @@ stages:
         displayName: "Build, check and unit test"
         steps:
           - checkout: self
+
           - task: UseDotNet@2
             displayName: "Install .NET 8 SDK"
             inputs:
               packageType: sdk
               version: 8.x
+
           - task: DotNetCoreCLI@2
             displayName: "Restore packages"
             inputs:
               command: restore
               projects: GoatTicket.sln
+
           - task: DotNetCoreCLI@2
             displayName: "Build solution"
             inputs:
               command: build
               projects: GoatTicket.sln
               arguments: --configuration Release --no-restore
+
           - task: DotNetCoreCLI@2
             displayName: "Check code formatting"
             inputs:
               command: custom
               custom: format
               arguments: GoatTicket.sln --verify-no-changes
+
           - task: DotNetCoreCLI@2
             displayName: "Check packages for known vulnerabilities"
             inputs:
               command: custom
               custom: list
               arguments: GoatTicket.sln package --vulnerable --include-transitive
+
           - task: MicrosoftSecurityDevOps@1
             displayName: "Scan code for exposed credentials"
             inputs:
@@ -80,12 +85,14 @@ stages:
               categories: code
               break: false
               publish: true
+
           - task: DotNetCoreCLI@2
             displayName: "Run unit tests"
             inputs:
               command: test
               projects: tests/GoatTicket.UnitTests/GoatTicket.UnitTests.csproj
               arguments: --configuration Release
+
           - task: DotNetCoreCLI@2
             displayName: "Package API"
             inputs:
@@ -95,6 +102,7 @@ stages:
               arguments: --configuration Release --output $(Build.ArtifactStagingDirectory)/api
               zipAfterPublish: true
               modifyOutputPath: false
+
           - task: DotNetCoreCLI@2
             displayName: "Package Function App"
             inputs:
@@ -104,6 +112,7 @@ stages:
               arguments: --configuration Release --output $(Build.ArtifactStagingDirectory)/func
               zipAfterPublish: true
               modifyOutputPath: false
+
           - publish: $(Build.ArtifactStagingDirectory)
             artifact: drop
             displayName: "Publish build artifact"
@@ -119,21 +128,23 @@ stages:
                 /usr/local/share/boost /usr/share/swift /opt/hostedtoolcache
               df -h /
             displayName: "Free disk space on the agent"
+
           - task: UseDotNet@2
             displayName: "Install .NET 8 SDK"
             inputs:
               packageType: sdk
               version: 8.x
+
           - task: DotNetCoreCLI@2
             displayName: "Run integration tests"
-            continueOnError: true # Known flaky: Cosmos emulator cold start on CI
+            continueOnError: true
             inputs:
               command: test
               projects: tests/GoatTicket.IntegrationTests/GoatTicket.IntegrationTests.csproj
               arguments: --configuration Release
+              
 
-  # All five environments are always defined. The branch decides which ones run;
-  # the rest show as Skipped. Mock: every environment uses dev resources (target: dev).
+  # DEPLOY
   - template: deploy/templates/deploy-env-stage.yml
     parameters:
       environment: dev
