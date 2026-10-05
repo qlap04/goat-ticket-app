@@ -146,7 +146,7 @@ stages:
           dependsOn: IntegrationTests
           deployInfraAll: ${{ parameters.deployInfraAll }}
 
-  # ===== release/*: SIT, rồi UAT =====
+  # ===== release/*: SIT, UAT =====
   - ${{ if startsWith(variables['Build.SourceBranch'], 'refs/heads/release/') }}:
       - template: deploy/templates/deploy-env-stage.yml
         parameters:
@@ -163,7 +163,7 @@ stages:
           dependsOn: Deploy_sit
           deployInfraAll: ${{ parameters.deployInfraAll }}
 
-  # ===== main: Pre-PROD, rồi PROD =====
+  # ===== main: Pre-PROD, -> PROD =====
   - ${{ if eq(variables['Build.SourceBranch'], 'refs/heads/main') }}:
       - template: deploy/templates/deploy-env-stage.yml
         parameters:
@@ -180,7 +180,7 @@ stages:
           dependsOn: Deploy_preprod
           deployInfraAll: ${{ parameters.deployInfraAll }}
 
-  # ===== hotfix/*: một môi trường chọn tay, mặc định dev =====
+  # ===== hotfix/*: choose one env, default dev =====
   - ${{ if startsWith(variables['Build.SourceBranch'], 'refs/heads/hotfix/') }}:
       - template: deploy/templates/deploy-env-stage.yml
         parameters:
