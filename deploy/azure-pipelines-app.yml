@@ -146,7 +146,7 @@ stages:
               
 
   # DEPLOY
-  - template: deploy/templates/deploy-env-stage.yml
+  - template: templates/deploy-env-stage.yml
     parameters:
       environment: dev
       displayName: "development"
@@ -157,7 +157,7 @@ stages:
       hotfixEnvironment: ${{ parameters.hotfixEnvironment }}
       deployInfraAll: ${{ parameters.deployInfraAll }}
 
-  - template: deploy/templates/deploy-env-stage.yml
+  - template: templates/deploy-env-stage.yml
     parameters:
       environment: sit
       displayName: "system integration testing (SIT)"
@@ -168,7 +168,7 @@ stages:
       hotfixEnvironment: ${{ parameters.hotfixEnvironment }}
       deployInfraAll: ${{ parameters.deployInfraAll }}
 
-  - template: deploy/templates/deploy-env-stage.yml
+  - template: templates/deploy-env-stage.yml
     parameters:
       environment: uat
       displayName: "user acceptance testing (UAT)"
@@ -179,7 +179,7 @@ stages:
       hotfixEnvironment: ${{ parameters.hotfixEnvironment }}
       deployInfraAll: ${{ parameters.deployInfraAll }}
 
-  - template: deploy/templates/deploy-env-stage.yml
+  - template: templates/deploy-env-stage.yml
     parameters:
       environment: preprod
       displayName: "pre-production"
@@ -190,7 +190,7 @@ stages:
       hotfixEnvironment: ${{ parameters.hotfixEnvironment }}
       deployInfraAll: ${{ parameters.deployInfraAll }}
 
-  - template: deploy/templates/deploy-env-stage.yml
+  - template: templates/deploy-env-stage.yml
     parameters:
       environment: prod
       displayName: "production"
