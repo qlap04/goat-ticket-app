@@ -1,21 +1,18 @@
 parameters:
-  - name: environment # dev, sit, uat, preprod, prod
+  - name: environment          # logical environment: dev, sit, uat, preprod, prod
     type: string
 
   - name: displayName
-    type: string
-
-  - name: target # mock: every environment deploys to dev resources
     type: string
 
   - name: dependsOn
     type: object
     default: []
 
-  - name: previousStage # stage that runs right before this one
+  - name: previousStage        # stage that runs right before this one
     type: string
 
-  - name: branchMatch # runtime expression: which branch normally owns this stage
+  - name: branchMatch          # runtime expression: which branch normally owns this stage
     type: string
 
   - name: hotfixEnvironment
@@ -25,11 +22,43 @@ parameters:
     type: boolean
     default: false
 
+  - name: azureSubscription
+    type: string
+    default: goat-ticket-connection
+
+  - name: settings
+    type: object
+    default:
+      dev:
+        adoEnvironment: goat-dev
+        variableGroup: goat-app-dev
+        apiApp: app-goat-api-dev
+        functionApp: func-goat-worker-dev
+      sit:
+        adoEnvironment: goat-sit
+        variableGroup: goat-app-dev
+        apiApp: app-goat-api-dev
+        functionApp: func-goat-worker-dev
+      uat:
+        adoEnvironment: goat-uat
+        variableGroup: goat-app-dev
+        apiApp: app-goat-api-dev
+        functionApp: func-goat-worker-dev
+      preprod:
+        adoEnvironment: goat-preprod
+        variableGroup: goat-app-dev
+        apiApp: app-goat-api-dev
+        functionApp: func-goat-worker-dev
+      prod:
+        adoEnvironment: goat-prod
+        variableGroup: goat-app-dev
+        apiApp: app-goat-api-dev
+        functionApp: func-goat-worker-dev
+
 stages:
   - stage: Deploy_${{ parameters.environment }}
     displayName: "Deliver to ${{ parameters.displayName }}"
     dependsOn: ${{ parameters.dependsOn }}
-  
     condition: >-
       and(
         in(dependencies.Build.result, 'Succeeded', 'SucceededWithIssues'),
@@ -43,39 +72,44 @@ stages:
         )
       )
     jobs:
-      # Optional infrastructure deployment: three-step flow lives in the infra repo
+      
       - ${{ if eq(parameters.deployInfraAll, true) }}:
           - template: deploy/templates/deploy-infra-jobs.yml@InfraRepo
             parameters:
               environment: ${{ parameters.environment }}
-              target: ${{ parameters.target }}
+              adoEnvironment: ${{ parameters.settings[parameters.environment].adoEnvironment }}
+              deployJobName: Infra_${{ parameters.environment }}
 
       - deployment: DeployApp_${{ parameters.environment }}
         displayName: "Deploy application to ${{ parameters.displayName }}"
-        environment: goat-${{ parameters.environment }}
+        environment: ${{ parameters.settings[parameters.environment].adoEnvironment }}
+        
         ${{ if eq(parameters.deployInfraAll, true) }}:
-          dependsOn: InfraDeploy_${{ parameters.environment }}
+          dependsOn: Infra_${{ parameters.environment }}
+        variables:
+          # Application settings are scoped to this job only
+          - group: ${{ parameters.settings[parameters.environment].variableGroup }}
         strategy:
           runOnce:
             deploy:
               steps:
                 - download: current
                   artifact: drop
-                  
                 - task: AzureWebApp@1
                   displayName: "Deploy API to App Service"
                   inputs:
-                    azureSubscription: goat-ticket-connection
+                    azureSubscription: ${{ parameters.azureSubscription }}
                     appType: webAppLinux
-                    appName: app-goat-api-${{ parameters.target }}
+                    appName: ${{ parameters.settings[parameters.environment].apiApp }}
                     package: $(Pipeline.Workspace)/drop/api/*.zip
                     deploymentMethod: zipDeploy
-
+                    # Mock application setting that comes from the variable group
+                    appSettings: -Keyword "$(Keyword)"
                 - task: AzureFunctionApp@2
                   displayName: "Deploy worker to Function App"
                   inputs:
-                    azureSubscription: goat-ticket-connection
+                    azureSubscription: ${{ parameters.azureSubscription }}
                     appType: functionAppLinux
-                    appName: func-goat-worker-${{ parameters.target }}
+                    appName: ${{ parameters.settings[parameters.environment].functionApp }}
                     package: $(Pipeline.Workspace)/drop/func/*.zip
                     deploymentMethod: zipDeploy
