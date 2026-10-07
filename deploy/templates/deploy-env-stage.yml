@@ -1,66 +1,90 @@
-parameters:
-  - name: environment          # logical environment: dev, sit, uat, preprod, prod
-    type: string
+# Delivery stage for ONE environment: optional infrastructure, the application, then a smoke test.
+# - Holds no environment values and no concrete names. Values arrive from
+#   deploy/environments/<env>.yml; the stage position and branch rule arrive from the root pipeline.
+# - Two ways to deliver the application, chosen by deploymentSlot:
+#     none     deploy straight to the App Service.
+#     staging  deploy to a slot first, then swap it into production behind the environment approval.
+# - Repository contract: the root pipeline must declare the infra repository as InfraRepo.
 
+parameters:
+  # ---- Values of this environment (from deploy/environments/<env>.yml) ----
+  - name: environment
+    type: string
+    values:
+      - dev
+      - sit
+      - uat
+      - preprod
+      - prod
   - name: displayName
     type: string
+  
+  - name: environmentName
+    type: string
+ 
+  - name: slotEnvironmentName
+    type: string
 
+  - name: deploymentSlot
+    type: string
+    values:
+      - none
+      - staging
+  # Name of the infrastructure deploy job. Defined here once, used for the call and for dependsOn.
+  - name: infraJobName
+    type: string
+
+  - name: azureServiceConnection
+    type: string
+
+  - name: resourceGroup
+    type: string
+
+  - name: apiAppName
+    type: string
+
+  - name: functionAppName
+    type: string
+
+  - name: variableGroup
+    type: string
+
+  - name: smokeTestUrl
+    type: string
+
+  # The mock domain still uses a self-signed certificate; switch to false once a real one is installed.
+  - name: smokeTestAllowSelfSignedCertificate
+    type: boolean
+
+  # ---- Position in the pipeline (from the root pipeline) ----
   - name: dependsOn
     type: object
-    default: []
-
-  - name: previousStage        # stage that runs right before this one
+  - name: previousStage
     type: string
 
-  - name: branchMatch          # runtime expression: which branch normally owns this stage
+  # Runtime expression: which branch normally owns this stage.
+  - name: branchMatch
     type: string
-
   - name: hotfixEnvironment
     type: string
-
+    values:
+      - dev
+      - sit
+      - uat
+      - preprod
   - name: deployInfraAll
     type: boolean
-    default: false
-
-  - name: azureSubscription
-    type: string
-    default: goat-ticket-connection
-
-  - name: settings
-    type: object
-    default:
-      dev:
-        adoEnvironment: goat-dev
-        variableGroup: goat-app-dev
-        apiApp: app-goat-api-dev
-        functionApp: func-goat-worker-dev
-      sit:
-        adoEnvironment: goat-sit
-        variableGroup: goat-app-dev
-        apiApp: app-goat-api-dev
-        functionApp: func-goat-worker-dev
-      uat:
-        adoEnvironment: goat-uat
-        variableGroup: goat-app-dev
-        apiApp: app-goat-api-dev
-        functionApp: func-goat-worker-dev
-      preprod:
-        adoEnvironment: goat-preprod
-        variableGroup: goat-app-dev
-        apiApp: app-goat-api-dev
-        functionApp: func-goat-worker-dev
-      prod:
-        adoEnvironment: goat-prod
-        variableGroup: goat-app-dev
-        apiApp: app-goat-api-dev
-        functionApp: func-goat-worker-dev
 
 stages:
   - stage: Deploy_${{ parameters.environment }}
     displayName: "Deliver to ${{ parameters.displayName }}"
     dependsOn: ${{ parameters.dependsOn }}
+    # The stage is always part of the pipeline; this condition decides whether it runs or is Skipped.
+    # A Skipped previous stage must not block this one: a release branch skips DEV, main skips DEV to UAT.
+    # Pull request builds never deploy.
     condition: >-
       and(
+        ne(variables['Build.Reason'], 'PullRequest'),
         in(dependencies.Build.result, 'Succeeded', 'SucceededWithIssues'),
         in(dependencies.${{ parameters.previousStage }}.result, 'Succeeded', 'SucceededWithIssues', 'Skipped'),
         or(
@@ -72,44 +96,162 @@ stages:
         )
       )
     jobs:
-      
+      # ---- Optional infrastructure: checks, then deploy, defined once in the infra repository ----
       - ${{ if eq(parameters.deployInfraAll, true) }}:
-          - template: deploy/templates/deploy-infra-jobs.yml@InfraRepo
+          - template: deploy/environments/${{ parameters.environment }}.yml@InfraRepo
             parameters:
-              environment: ${{ parameters.environment }}
-              adoEnvironment: ${{ parameters.settings[parameters.environment].adoEnvironment }}
-              deployJobName: Infra_${{ parameters.environment }}
+              deployJobName: ${{ parameters.infraJobName }}
+              repository: InfraRepo
 
-      - deployment: DeployApp_${{ parameters.environment }}
-        displayName: "Deploy application to ${{ parameters.displayName }}"
-        environment: ${{ parameters.settings[parameters.environment].adoEnvironment }}
-        
-        ${{ if eq(parameters.deployInfraAll, true) }}:
-          dependsOn: Infra_${{ parameters.environment }}
-        variables:
-          # Application settings are scoped to this job only
-          - group: ${{ parameters.settings[parameters.environment].variableGroup }}
-        strategy:
-          runOnce:
-            deploy:
-              steps:
-                - download: current
-                  artifact: drop
-                - task: AzureWebApp@1
-                  displayName: "Deploy API to App Service"
-                  inputs:
-                    azureSubscription: ${{ parameters.azureSubscription }}
-                    appType: webAppLinux
-                    appName: ${{ parameters.settings[parameters.environment].apiApp }}
-                    package: $(Pipeline.Workspace)/drop/api/*.zip
-                    deploymentMethod: zipDeploy
-                    # Mock application setting that comes from the variable group
-                    appSettings: -Keyword "$(Keyword)"
-                - task: AzureFunctionApp@2
-                  displayName: "Deploy worker to Function App"
-                  inputs:
-                    azureSubscription: ${{ parameters.azureSubscription }}
-                    appType: functionAppLinux
-                    appName: ${{ parameters.settings[parameters.environment].functionApp }}
-                    package: $(Pipeline.Workspace)/drop/func/*.zip
-                    deploymentMethod: zipDeploy
+      # ---- Slot mode: deploy to the slot, then swap behind the approval ----
+      - ${{ if ne(parameters.deploymentSlot, 'none') }}:
+          - deployment: DeploySlot_${{ parameters.environment }}
+            displayName: "Deploy application to the ${{ parameters.deploymentSlot }} slot for ${{ parameters.displayName }}"
+            timeoutInMinutes: 30
+            ${{ if eq(parameters.deployInfraAll, true) }}:
+              dependsOn: ${{ parameters.infraJobName }}
+            environment: ${{ parameters.slotEnvironmentName }}
+            variables:
+              # Application settings are scoped to this job only.
+              - group: ${{ parameters.variableGroup }}
+            strategy:
+              runOnce:
+                deploy:
+                  steps:
+                    - download: current
+                      artifact: drop
+
+                    # Settings that travel with the code (not slot-sticky) are written to the slot only.
+                    - task: AzureAppServiceSettings@1
+                      displayName: "Apply application settings to the ${{ parameters.deploymentSlot }} slot"
+                      inputs:
+                        azureSubscription: ${{ parameters.azureServiceConnection }}
+                        appName: ${{ parameters.apiAppName }}
+                        resourceGroupName: ${{ parameters.resourceGroup }}
+                        slotName: ${{ parameters.deploymentSlot }}
+                        appSettings: $(appSettingsJson)
+
+                    - task: AzureWebApp@1
+                      displayName: "Deploy API to the ${{ parameters.deploymentSlot }} slot"
+                      inputs:
+                        azureSubscription: ${{ parameters.azureServiceConnection }}
+                        appType: webAppLinux
+                        appName: ${{ parameters.apiAppName }}
+                        deployToSlotOrASE: true
+                        resourceGroupName: ${{ parameters.resourceGroup }}
+                        slotName: ${{ parameters.deploymentSlot }}
+                        package: $(Pipeline.Workspace)/drop/api/*.zip
+                        deploymentMethod: zipDeploy
+
+                    # The worker is a queue consumer and has no slot. It is deployed before the API goes live,
+                    # so it must keep reading messages written by both the old and the new API.
+                    - task: AzureFunctionApp@2
+                      displayName: "Deploy worker to Function App"
+                      inputs:
+                        azureSubscription: ${{ parameters.azureServiceConnection }}
+                        appType: functionAppLinux
+                        appName: ${{ parameters.functionAppName }}
+                        package: $(Pipeline.Workspace)/drop/func/*.zip
+                        deploymentMethod: zipDeploy
+
+                    - task: AzureAppServiceSettings@1
+                      displayName: "Apply application settings to Function App"
+                      inputs:
+                        azureSubscription: ${{ parameters.azureServiceConnection }}
+                        appName: ${{ parameters.functionAppName }}
+                        resourceGroupName: ${{ parameters.resourceGroup }}
+                        appSettings: $(appSettingsJson)
+
+          - deployment: SwapSlot_${{ parameters.environment }}
+            displayName: "Swap the ${{ parameters.deploymentSlot }} slot into production for ${{ parameters.displayName }}"
+            dependsOn: DeploySlot_${{ parameters.environment }}
+            timeoutInMinutes: 45
+            # Bound to the stage environment: its approval is asked here, after the slot is ready.
+            environment: ${{ parameters.environmentName }}
+            strategy:
+              runOnce:
+                deploy:
+                  steps:
+                    - download: none
+
+                    - task: AzureAppServiceManage@0
+                      displayName: "Swap ${{ parameters.deploymentSlot }} slot into production"
+                      inputs:
+                        azureSubscription: ${{ parameters.azureServiceConnection }}
+                        Action: "Swap Slots"
+                        WebAppName: ${{ parameters.apiAppName }}
+                        ResourceGroupName: ${{ parameters.resourceGroup }}
+                        SourceSlot: ${{ parameters.deploymentSlot }}
+                        SwapWithProduction: true
+
+      # ---- Direct mode: deploy straight to the App Service ----
+      - ${{ if eq(parameters.deploymentSlot, 'none') }}:
+          - deployment: DeployApp_${{ parameters.environment }}
+            displayName: "Deploy application to ${{ parameters.displayName }}"
+            timeoutInMinutes: 30
+            ${{ if eq(parameters.deployInfraAll, true) }}:
+              dependsOn: ${{ parameters.infraJobName }}
+            environment: ${{ parameters.environmentName }}
+            variables:
+              - group: ${{ parameters.variableGroup }}
+            strategy:
+              runOnce:
+                deploy:
+                  steps:
+                    - download: current
+                      artifact: drop
+
+                    - task: AzureWebApp@1
+                      displayName: "Deploy API to App Service"
+                      inputs:
+                        azureSubscription: ${{ parameters.azureServiceConnection }}
+                        appType: webAppLinux
+                        appName: ${{ parameters.apiAppName }}
+                        package: $(Pipeline.Workspace)/drop/api/*.zip
+                        deploymentMethod: zipDeploy
+
+                    - task: AzureAppServiceSettings@1
+                      displayName: "Apply application settings to App Service"
+                      inputs:
+                        azureSubscription: ${{ parameters.azureServiceConnection }}
+                        appName: ${{ parameters.apiAppName }}
+                        resourceGroupName: ${{ parameters.resourceGroup }}
+                        appSettings: $(appSettingsJson)
+
+                    - task: AzureFunctionApp@2
+                      displayName: "Deploy worker to Function App"
+                      inputs:
+                        azureSubscription: ${{ parameters.azureServiceConnection }}
+                        appType: functionAppLinux
+                        appName: ${{ parameters.functionAppName }}
+                        package: $(Pipeline.Workspace)/drop/func/*.zip
+                        deploymentMethod: zipDeploy
+
+                    - task: AzureAppServiceSettings@1
+                      displayName: "Apply application settings to Function App"
+                      inputs:
+                        azureSubscription: ${{ parameters.azureServiceConnection }}
+                        appName: ${{ parameters.functionAppName }}
+                        resourceGroupName: ${{ parameters.resourceGroup }}
+                        appSettings: $(appSettingsJson)
+
+      # ---- Smoke test: after the application is live. It only reports; it never rolls anything back ----
+      - job: SmokeTest_${{ parameters.environment }}
+        displayName: "Check that the application responds in ${{ parameters.displayName }}"
+        timeoutInMinutes: 10
+        ${{ if eq(parameters.deploymentSlot, 'none') }}:
+          dependsOn: DeployApp_${{ parameters.environment }}
+        ${{ if ne(parameters.deploymentSlot, 'none') }}:
+          dependsOn: SwapSlot_${{ parameters.environment }}
+        steps:
+          - checkout: none
+          - script: |
+              curl --fail --silent --show-error --location --max-time 30 \
+                --retry 5 --retry-delay 10 --retry-all-errors \
+                --output /dev/null --write-out "HTTP %{http_code} from ${SMOKE_URL}\n" \
+                ${SMOKE_INSECURE} "${SMOKE_URL}"
+            displayName: "Call the application address"
+            env:
+              SMOKE_URL: ${{ parameters.smokeTestUrl }}
+              ${{ if eq(parameters.smokeTestAllowSelfSignedCertificate, true) }}:
+                SMOKE_INSECURE: "--insecure"

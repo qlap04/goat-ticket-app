@@ -1,0 +1,38 @@
+# Application values for the uat environment.
+# MOCK: every environment currently delivers to the dev resources and the dev settings.
+# When a real environment exists, change only the values below. The template is not touched.
+
+parameters:
+  # Position in the pipeline, passed through from azure-pipelines-app.yml.
+  - name: dependsOn
+    type: object
+  - name: previousStage
+    type: string
+  - name: branchMatch
+    type: string
+  - name: hotfixEnvironment
+    type: string
+  - name: deployInfraAll
+    type: boolean
+
+stages:
+  - template: ../templates/deploy-env-stage.yml
+    parameters:
+      environment: uat
+      displayName: user acceptance testing (UAT)
+      environmentName: goat-uat
+      infraJobName: InfraDeploy_uat
+      deploymentSlot: none
+      slotEnvironmentName: none
+      azureServiceConnection: goat-ticket-connection
+      resourceGroup: rg-goat-app-dev
+      apiAppName: app-goat-api-dev
+      functionAppName: func-goat-worker-dev
+      variableGroup: goat-app-dev
+      smokeTestUrl: https://goatticket.kaidevops.online/swagger/index.html
+      smokeTestAllowSelfSignedCertificate: true
+      dependsOn: ${{ parameters.dependsOn }}
+      previousStage: ${{ parameters.previousStage }}
+      branchMatch: ${{ parameters.branchMatch }}
+      hotfixEnvironment: ${{ parameters.hotfixEnvironment }}
+      deployInfraAll: ${{ parameters.deployInfraAll }}

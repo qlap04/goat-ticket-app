@@ -1,3 +1,14 @@
+# Application delivery pipeline (Git Flow).
+#
+#   develop     -> DEV
+#   release/*   -> SIT, then UAT
+#   main        -> Pre-PROD, then PROD
+#   hotfix/*    -> one environment chosen at run time (default DEV)
+#
+# All five deployment stages are always defined. The branch decides which of them run and the
+# rest show as Skipped. Pull requests build and test only.
+# Environment values live in deploy/environments/<env>.yml, never in this file.
+
 name: "App Delivery - $(Build.SourceBranchName) - $(Date:yyyyMMdd)$(Rev:.r)"
 
 trigger:
@@ -8,43 +19,51 @@ trigger:
       - release/*
       - hotfix/*
 
-pr: none
+pr:
+  branches:
+    include:
+      - develop
+      - main
+      - release/*
 
 parameters:
   - name: deployInfraAll
-    displayName: "Deploy infrastructure before the application (every active environment)"
+    displayName: "Deploy infrastructure before the application"
     type: boolean
     default: false
-    
   - name: hotfixEnvironment
-    displayName: "Hotfix branches only: target environment"
+    displayName: "Hotfix branches only: environment to deliver to"
     type: string
     default: dev
-    values: [dev, sit, uat, preprod, prod]
+    values:
+      - dev
+      - sit
+      - uat
+      - preprod
+      - prod
 
 resources:
   repositories:
     - repository: InfraRepo
       type: github
       name: qlap04/goat-ticket-infra
-      ref: dev
+      ref: refs/tags/infra-templates-v1.0.0
       endpoint: qlap04
 
 pool:
-  vmImage: ubuntu-latest
-
-variables:
-  - group: goat-ticket-secrets-dev
+  vmImage: ubuntu-24.04
 
 stages:
-  # BUILD & TEST
+  # ---- Build once; every environment reuses the same artifact ----
   - stage: Build
     displayName: "Build and test application"
     jobs:
       - job: BuildAndTest
         displayName: "Build, check and unit test"
+        timeoutInMinutes: 30
         steps:
           - checkout: self
+            fetchDepth: 1
 
           - task: UseDotNet@2
             displayName: "Install .NET 8 SDK"
@@ -120,9 +139,14 @@ stages:
 
       - job: IntegrationTests
         displayName: "Run integration tests against containers"
+        timeoutInMinutes: 45
+        variables:
+          - group: goat-app-integration
         steps:
           - checkout: self
-          # This cleanup removes preinstalled SDKs, so it must stay on its own agent
+            fetchDepth: 1
+
+          # This cleanup removes preinstalled SDKs, so it must stay on its own agent.
           - script: |
               docker system prune -a --volumes -f
               sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
@@ -138,63 +162,51 @@ stages:
 
           - task: DotNetCoreCLI@2
             displayName: "Run integration tests"
+            
             continueOnError: true
+            env:
+              # The same JSON string that the deployment writes to the server, with the test values.
+              APP_SETTINGS_JSON: $(appSettingsJson)
             inputs:
               command: test
               projects: tests/GoatTicket.IntegrationTests/GoatTicket.IntegrationTests.csproj
               arguments: --configuration Release
-              
 
-  # DEPLOY
-  - template: templates/deploy-env-stage.yml
+  # ---- Environments: each file passes that environment's values into the generic stage template ----
+  - template: deploy/environments/dev.yml
     parameters:
-      environment: dev
-      displayName: "development"
-      target: dev
       dependsOn: [Build]
       previousStage: Build
       branchMatch: "eq(variables['Build.SourceBranch'], 'refs/heads/develop')"
       hotfixEnvironment: ${{ parameters.hotfixEnvironment }}
       deployInfraAll: ${{ parameters.deployInfraAll }}
 
-  - template: templates/deploy-env-stage.yml
+  - template: deploy/environments/sit.yml
     parameters:
-      environment: sit
-      displayName: "system integration testing (SIT)"
-      target: dev
       dependsOn: [Build, Deploy_dev]
       previousStage: Deploy_dev
       branchMatch: "startsWith(variables['Build.SourceBranch'], 'refs/heads/release/')"
       hotfixEnvironment: ${{ parameters.hotfixEnvironment }}
       deployInfraAll: ${{ parameters.deployInfraAll }}
 
-  - template: templates/deploy-env-stage.yml
+  - template: deploy/environments/uat.yml
     parameters:
-      environment: uat
-      displayName: "user acceptance testing (UAT)"
-      target: dev
       dependsOn: [Build, Deploy_sit]
       previousStage: Deploy_sit
       branchMatch: "startsWith(variables['Build.SourceBranch'], 'refs/heads/release/')"
       hotfixEnvironment: ${{ parameters.hotfixEnvironment }}
       deployInfraAll: ${{ parameters.deployInfraAll }}
 
-  - template: templates/deploy-env-stage.yml
+  - template: deploy/environments/preprod.yml
     parameters:
-      environment: preprod
-      displayName: "pre-production"
-      target: dev
       dependsOn: [Build, Deploy_uat]
       previousStage: Deploy_uat
       branchMatch: "eq(variables['Build.SourceBranch'], 'refs/heads/main')"
       hotfixEnvironment: ${{ parameters.hotfixEnvironment }}
       deployInfraAll: ${{ parameters.deployInfraAll }}
 
-  - template: templates/deploy-env-stage.yml
+  - template: deploy/environments/prod.yml
     parameters:
-      environment: prod
-      displayName: "production"
-      target: dev
       dependsOn: [Build, Deploy_preprod]
       previousStage: Deploy_preprod
       branchMatch: "eq(variables['Build.SourceBranch'], 'refs/heads/main')"
