@@ -37,6 +37,12 @@ parameters:
   - name: createKeyVaultSecrets
     type: boolean
 
+  - name: keyVaultSecrets
+    type: object
+    default:
+      - secretName: Signing--TicketQrSigningKeyPem
+        variableName: ticketQrSigningKeyValue
+
 stages:
   - stage: Deploy_${{ parameters.environment }}
     displayName: "Deliver to ${{ upper(parameters.environment) }}"
@@ -82,21 +88,23 @@ stages:
                   artifact: drop
 
                 - ${{ if eq(parameters.createKeyVaultSecrets, true) }}:
-                    - task: AzureCLI@2
-                      displayName: "Write Signing--TicketQrSigningKeyPem to Key Vault"
-                      inputs:
-                        azureSubscription: goat-ticket-connection
-                        scriptType: bash
-                        scriptLocation: inlineScript
-                        inlineScript: |
-                          az keyvault secret set \
-                            --vault-name "$KEY_VAULT_NAME" \
-                            --name "Signing--TicketQrSigningKeyPem" \
-                            --value "$SECRET_VALUE" \
-                            --output none
-                      env:
-                        KEY_VAULT_NAME: $(keyVaultName)
-                        SECRET_VALUE: $(ticketQrSigningKeyValue)
+                    - ${{ each secret in parameters.keyVaultSecrets }}:
+                        - task: AzureCLI@2
+                          displayName: "Write ${{ secret.secretName }} to Key Vault"
+                          inputs:
+                            azureSubscription: goat-ticket-connection
+                            scriptType: bash
+                            scriptLocation: inlineScript
+                            inlineScript: |
+                              az keyvault secret set \
+                                --vault-name "$KEY_VAULT_NAME" \
+                                --name "$SECRET_NAME" \
+                                --value "$SECRET_VALUE" \
+                                --output none
+                          env:
+                            KEY_VAULT_NAME: $(keyVaultName)
+                            SECRET_NAME: ${{ secret.secretName }}
+                            SECRET_VALUE: $(${{ secret.variableName }})
 
                 - task: AzureAppServiceSettings@1
                   displayName: "Apply application settings to Function App"
