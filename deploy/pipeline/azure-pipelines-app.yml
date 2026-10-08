@@ -30,11 +30,6 @@ parameters:
       - uat
       - preprod
 
-  - name: azureLocation
-    displayName: "Deployment metadata location (must match the .bicepparam)"
-    type: string
-    default: southeastasia
-
   - name: environments
     displayName: "Delivery order (do not change)"
     type: object
@@ -80,54 +75,16 @@ stages:
   - stage: Build
     displayName: "Build and test application"
     jobs:
-      - template: deploy/templates/build-test.yml
-        parameters:
-          dotnetVersion: 8.x
-          buildConfiguration: Release
-          solution: GoatTicket.sln
-          apiProject: src/GoatTicket.Api/GoatTicket.Api.csproj
-          functionProject: src/GoatTicket.Functions/GoatTicket.Functions.csproj
-          unitTestProject: tests/GoatTicket.UnitTests/GoatTicket.UnitTests.csproj
-          containerTestProjects:
-            - name: contract tests
-              project: tests/GoatTicket.ContractTests/GoatTicket.ContractTests.csproj
-            - name: integration tests
-              project: tests/GoatTicket.IntegrationTests/GoatTicket.IntegrationTests.csproj
-          artifactName: drop
-          apiPackageFolder: api
-          functionPackageFolder: func
-          buildTimeoutMinutes: 30
-          containerTestTimeoutMinutes: 45
+      - template: templates/build-test.yml
 
   - ${{ each env in parameters.environments }}:
-      - template: deploy/templates/deploy-env-stage.yml
+      - template: templates/deploy-env-stage.yml
         parameters:
           environment: ${{ env.environment }}
           environmentName: ${{ env.environmentName }}
           previousStage: ${{ env.previousStage }}
           branchMatch: ${{ env.branchMatch }}
           deploymentSlot: ${{ env.deploymentSlot }}
-
           hotfixEnvironment: ${{ parameters.hotfixEnvironment }}
           deployInfraAll: ${{ parameters.deployInfraAll }}
           createKeyVaultSecrets: ${{ parameters.createKeyVaultSecrets }}
-
-          variableGroup: goat-app-dev
-          secretGroup: goat-ticket-secrets-dev
-          smokeTestAllowSelfSignedCertificate: true
-
-          azureServiceConnection: goat-ticket-connection
-          azureSubscriptionId: 3a69333f-bef6-45a8-9206-f82c71e24d70
-          azureLocation: ${{ parameters.azureLocation }}
-
-          artifactName: drop
-          apiPackageFolder: api
-          functionPackageFolder: func
-
-          infraJobName: InfraDeploy_${{ env.environment }}
-          bicepVersion: 0.47.16
-          stackName: stack-goat-dev
-          actionOnUnmanageResources: detach
-          actionOnUnmanageResourceGroups: detach
-          denySettingsMode: none
-          bypassStackOutOfSyncError: false

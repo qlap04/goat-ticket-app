@@ -1,44 +1,7 @@
-parameters:
-  - name: dotnetVersion
-    type: string
-
-  - name: buildConfiguration
-    type: string
-
-  - name: solution
-    type: string
-
-  - name: apiProject
-    type: string
-
-  - name: functionProject
-    type: string
-
-  - name: unitTestProject
-    type: string
-
-  - name: containerTestProjects
-    type: object
-
-  - name: artifactName
-    type: string
-
-  - name: apiPackageFolder
-    type: string
-
-  - name: functionPackageFolder
-    type: string
-
-  - name: buildTimeoutMinutes
-    type: number
-
-  - name: containerTestTimeoutMinutes
-    type: number
-
 jobs:
   - job: BuildAndTest
     displayName: "Build, check and unit test"
-    timeoutInMinutes: ${{ parameters.buildTimeoutMinutes }}
+    timeoutInMinutes: 30
     steps:
       - checkout: self
         fetchDepth: 1
@@ -47,34 +10,34 @@ jobs:
         displayName: "Install .NET SDK"
         inputs:
           packageType: sdk
-          version: ${{ parameters.dotnetVersion }}
+          version: 8.x
 
       - task: DotNetCoreCLI@2
         displayName: "Restore packages"
         inputs:
           command: restore
-          projects: ${{ parameters.solution }}
+          projects: GoatTicket.sln
 
       - task: DotNetCoreCLI@2
         displayName: "Build solution"
         inputs:
           command: build
-          projects: ${{ parameters.solution }}
-          arguments: --configuration ${{ parameters.buildConfiguration }} --no-restore
+          projects: GoatTicket.sln
+          arguments: --configuration Release --no-restore
 
       - task: DotNetCoreCLI@2
         displayName: "Check code formatting"
         inputs:
           command: custom
           custom: format
-          arguments: ${{ parameters.solution }} --verify-no-changes
+          arguments: GoatTicket.sln --verify-no-changes
 
       - task: DotNetCoreCLI@2
         displayName: "Check packages for known vulnerabilities"
         inputs:
           command: custom
           custom: list
-          arguments: ${{ parameters.solution }} package --vulnerable --include-transitive
+          arguments: GoatTicket.sln package --vulnerable --include-transitive
 
       - task: MicrosoftSecurityDevOps@1
         displayName: "Scan code for exposed credentials"
@@ -88,18 +51,16 @@ jobs:
         displayName: "Run unit tests"
         inputs:
           command: test
-          projects: ${{ parameters.unitTestProject }}
-          arguments: --configuration ${{ parameters.buildConfiguration }}
+          projects: tests/GoatTicket.UnitTests/GoatTicket.UnitTests.csproj
+          arguments: --configuration Release
 
       - task: DotNetCoreCLI@2
         displayName: "Package API"
         inputs:
           command: publish
           publishWebProjects: false
-          projects: ${{ parameters.apiProject }}
-          arguments: >-
-            --configuration ${{ parameters.buildConfiguration }}
-            --output $(Build.ArtifactStagingDirectory)/${{ parameters.apiPackageFolder }}
+          projects: src/GoatTicket.Api/GoatTicket.Api.csproj
+          arguments: --configuration Release --output $(Build.ArtifactStagingDirectory)/api
           zipAfterPublish: true
           modifyOutputPath: false
 
@@ -108,20 +69,20 @@ jobs:
         inputs:
           command: publish
           publishWebProjects: false
-          projects: ${{ parameters.functionProject }}
-          arguments: >-
-            --configuration ${{ parameters.buildConfiguration }}
-            --output $(Build.ArtifactStagingDirectory)/${{ parameters.functionPackageFolder }}
+          projects: src/GoatTicket.Functions/GoatTicket.Functions.csproj
+          arguments: --configuration Release --output $(Build.ArtifactStagingDirectory)/func
           zipAfterPublish: true
           modifyOutputPath: false
 
       - publish: $(Build.ArtifactStagingDirectory)
-        artifact: ${{ parameters.artifactName }}
+        artifact: drop
         displayName: "Publish build artifact"
 
   - job: ContainerTests
     displayName: "Run contract and integration tests against containers"
-    timeoutInMinutes: ${{ parameters.containerTestTimeoutMinutes }}
+    timeoutInMinutes: 45
+    variables:
+      - group: goat-app-integration
     steps:
       - checkout: self
         fetchDepth: 1
@@ -137,12 +98,22 @@ jobs:
         displayName: "Install .NET SDK"
         inputs:
           packageType: sdk
-          version: ${{ parameters.dotnetVersion }}
+          version: 8.x
 
-      - ${{ each suite in parameters.containerTestProjects }}:
-          - task: DotNetCoreCLI@2
-            displayName: "Run ${{ suite.name }}"
-            inputs:
-              command: test
-              projects: ${{ suite.project }}
-              arguments: --configuration ${{ parameters.buildConfiguration }}
+      - task: DotNetCoreCLI@2
+        displayName: "Run contract tests"
+        env:
+          APP_SETTINGS_JSON: $(appSettingsJson)
+        inputs:
+          command: test
+          projects: tests/GoatTicket.ContractTests/GoatTicket.ContractTests.csproj
+          arguments: --configuration Release
+
+      - task: DotNetCoreCLI@2
+        displayName: "Run integration tests"
+        env:
+          APP_SETTINGS_JSON: $(appSettingsJson)
+        inputs:
+          command: test
+          projects: tests/GoatTicket.IntegrationTests/GoatTicket.IntegrationTests.csproj
+          arguments: --configuration Release

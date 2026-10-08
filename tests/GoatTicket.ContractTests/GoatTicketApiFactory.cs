@@ -10,6 +10,7 @@ using Microsoft.AspNetCore.TestHost;
 using Microsoft.Azure.Cosmos;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Testcontainers.Azurite;
 using Testcontainers.CosmosDb;
@@ -64,7 +65,14 @@ public class GoatTicketApiFactory : WebApplicationFactory<Program>, IAsyncLifeti
         await db.Database.MigrateAsync();
 
         var cosmosClient = scope.ServiceProvider.GetRequiredService<CosmosClient>();
-        var container = await CosmosBootstrap.EnsureCatalogContainerAsync(cosmosClient, "GoatTicket", "catalog");
+        // From configuration, so the tests create the database and container the deployed
+        // application asks for. Cosmos ids are case sensitive, and these two names once disagreed
+        // between the template and the application.
+        var configuration = scope.ServiceProvider.GetRequiredService<IConfiguration>();
+        var container = await CosmosBootstrap.EnsureCatalogContainerAsync(
+            cosmosClient,
+            configuration["Cosmos:DatabaseId"] ?? "GoatTicket",
+            configuration["Cosmos:ContainerId"] ?? "catalog");
 
         await GoatTicket.Infrastructure.Seed.CatalogSeeder.SeedAsync(db, container);
     }
@@ -75,9 +83,39 @@ public class GoatTicketApiFactory : WebApplicationFactory<Program>, IAsyncLifeti
         await base.DisposeAsync();
     }
 
+    /// <summary>
+    /// The application settings the pipeline hands these tests, in the same shape the delivery
+    /// pipeline writes to the App Service: a JSON array of { name, value } with '__' separating
+    /// configuration sections. It arrives in APP_SETTINGS_JSON, which the pipeline maps from
+    /// appSettingsJson in the goat-app-integration variable group.
+    ///
+    /// Reading the same contract here is the point: a setting name that drifts between these tests
+    /// and the deployed application would otherwise leave the tests green and production broken.
+    /// Running locally without the variable set is fine, the defaults apply.
+    /// </summary>
+    private static Dictionary<string, string?> PipelineAppSettings()
+    {
+        var json = Environment.GetEnvironmentVariable("APP_SETTINGS_JSON");
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            return new Dictionary<string, string?>();
+        }
+
+        using var document = JsonDocument.Parse(json);
+        return document.RootElement.EnumerateArray().ToDictionary(
+            entry => entry.GetProperty("name").GetString()!.Replace("__", ":"),
+            entry => entry.TryGetProperty("value", out var value) ? value.GetString() : null);
+    }
+
+    private readonly Dictionary<string, string?> _appSettings = PipelineAppSettings();
+
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseEnvironment("Development");
+
+        // Lowest precedence on purpose: the container endpoints applied below must win, because
+        // Testcontainers assigns their ports at run time.
+        builder.ConfigureAppConfiguration(configuration => configuration.AddInMemoryCollection(_appSettings));
 
         builder.ConfigureTestServices(services =>
         {

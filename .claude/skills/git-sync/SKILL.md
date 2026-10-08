@@ -125,7 +125,6 @@ run in the pipeline, so do not try to run them locally unless Docker is up.
 **Either repository, when any pipeline YAML or `.bicepparam` changed**
 
 ```
-python3 tools/verify_pipelines.py . infra
 ```
 
 All checks must pass. Occasionally inject one deliberate mistake into a throwaway
@@ -134,7 +133,7 @@ DevOps, not Azure DevOps.
 
 ## Step 4 — The cross-repository contract
 
-If anything under `infra/deploy/templates/` changed, the application pipeline is
+If anything under `infra/deploy/pipeline/templates/` changed, the application pipeline is
 still pinned to the old templates and will not see it. Both of these, or neither:
 
 ```
@@ -142,7 +141,7 @@ git -C infra tag infra-templates-vX.Y.Z
 git -C infra push origin infra-templates-vX.Y.Z
 ```
 
-and bump `ref: refs/tags/infra-templates-vX.Y.Z` in `azure-pipelines-app.yml`
+and bump `ref: refs/tags/infra-templates-vX.Y.Z` in `deploy/pipeline/azure-pipelines-app.yml`
 under `resources.repositories`. Raise it with the user before choosing the
 version. Changing one without the other is silently wrong: the pipeline keeps
 compiling, against the previous templates.

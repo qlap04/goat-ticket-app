@@ -6,10 +6,10 @@ Read `docs/PROJECT_CONTEXT.md` first: it says what is done, what is only designe
 ## Layout
 
 ```
-azure-pipelines-app.yml                  root pipeline (Git Flow, build once, five environment stages)
-deploy/templates/deploy-env-stage.yml    generic stage: optional infra, application (direct or slot), smoke test
-deploy/environments/<env>.yml            values for one environment, passed to the stage template as parameters
-src/  tests/  GoatTicket.sln             application code
+deploy/pipeline/azure-pipelines-app.yml          root pipeline, manual run, five environment stages
+deploy/pipeline/templates/build-test.yml         build once, unit tests, container tests, artifact "drop"
+deploy/pipeline/templates/deploy-env-stage.yml   one environment: optional infra, application, smoke test
+src/  tests/  GoatTicket.sln                     application code
 ```
 
 ## Branches
@@ -20,24 +20,21 @@ to commits that change only pipeline files while the Azure environment is not ru
 
 ## Rules
 
-- The stage template holds no environment values and no defaults. Values come from `deploy/environments/<env>.yml`.
-  The root file only passes the position in the pipeline (`dependsOn`, `previousStage`, `branchMatch`).
+- Only what varies is a template parameter. The service connection, the variable groups and the stack are the same
+  for every stage, so they are fixed in the template. Resource names and addresses come from the `goat-app-<env>`
+  variable group at run time, because Azure decides what an instance is called.
 - No pipeline-level variable group. Each job loads only the group it needs: `goat-app-<env>` for deployment,
   `goat-app-integration` for tests. Application settings are one JSON string, `appSettingsJson`, in the group.
-- Infra comes from the infra repo (`InfraRepo`, pinned to a tag) through `deploy/environments/<env>.yml@InfraRepo`,
-  only when `deployInfraAll` is true. Run it before the application: infra deploys overwrite Bicep-managed settings.
+- Infra comes from the infra repo (`InfraRepo`, pinned to a tag) through
+  `deploy/pipeline/templates/deploy-infra-jobs.yml@InfraRepo`, only when `deployInfraAll` is true. It runs first in the
+  stage: an infrastructure deploy replaces the application settings the pipeline wrote.
+- Secrets reach Key Vault through the `createKeyVaultSecrets` toggle, off by default. No secret passes through Bicep.
 - Slot delivery exists in the template but is off (`deploymentSlot: none`). Do not turn it on for prod until the
   infra repo's Bicep slot work is deployed.
 - No automatic rollback in the pipeline. The smoke test only reports.
 - Built-in tasks over scripts, native Environment approvals, no hardcoded names in logic, display names in plain
   English without icons, comments in English.
 - Never commit secrets or keys.
-
-## Before you commit pipeline YAML
-
-```
-python3 tools/verify_pipelines.py . ../goat-ticket-infra
-```
 
 ## Working style
 

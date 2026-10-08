@@ -71,7 +71,6 @@ Another project's Key Vaults (`kv-inventory-*`) exist in the same subscription. 
 ### 4.2 Written and verified offline; being implemented on Azure DevOps on 2026-10-08
 
 The pipeline set described in section 5 (14 YAML files), now using Azure deployment stacks for infrastructure. It passes
-`tools/verify_pipelines.py`. In three rounds of
 deliberate mistakes injected into a copy (17, 21 and 17 cases, overlapping) every one was caught after the checker was
 strengthened where the first round missed one. That checker is a subset simulator, not Azure DevOps, so the real
 first runs may still surface differences (section 9, list B).
@@ -111,7 +110,7 @@ Production is delivered from `main` only; the allow-list of `hotfixEnvironment` 
 in the stage template. All five deployment stages are always defined; the branch decides which run. Mock mode: every environment still
 delivers to the dev resources, so only the stage name, Environment and approval differ.
 
-### 5.2 Application pipeline (`azure-pipelines-app.yml`)
+### 5.2 Application pipeline (`deploy/pipeline/azure-pipelines-app.yml`)
 
 ```
 Stage Build (jobs run in parallel)
@@ -147,8 +146,10 @@ refuses to deploy a pull request build. Deployment is manual because of the fire
 ### 5.4 How values reach the templates (rule: templates hold no values)
 
 ```
-azure-pipelines-app.yml  ->  deploy/environments/<env>.yml  ->  deploy/templates/deploy-env-stage.yml   (app repo)
-infra pipeline or app    ->  deploy/environments/<env>.yml  ->  deploy/templates/deploy-infra-jobs.yml  (infra repo)
+deploy/pipeline/azure-pipelines-app.yml   ->  deploy/pipeline/templates/deploy-env-stage.yml    (app repo)
+deploy/pipeline/azure-pipelines-infra.yml ->  deploy/pipeline/templates/deploy-infra-jobs.yml   (infra repo)
+                                              deploy/variables/<env>.bicepparam  (Bicep values)
+                                              goat-app-<env> variable group      (application values)
 ```
 
 - Each environment file passes that environment's values (service connection, resource names, Environment names,
@@ -156,9 +157,8 @@ infra pipeline or app    ->  deploy/environments/<env>.yml  ->  deploy/templates
 - Template parameters have no defaults and `environment` has an allow-list, so a missing or misspelled value fails
   at compile time. Adding a real environment means editing one file.
 - Contract between the repos: the app declares the infra repo as resource `InfraRepo`, calls
-  `deploy/environments/<env>.yml@InfraRepo` with `deployJobName` and `repository: InfraRepo`, and then
-  `dependsOn` that job name (defined once per environment as `infraJobName`).
-- Job names appear twice inside a template (definition and `dependsOn`). `tools/verify_pipelines.py` checks they match.
+  `deploy/pipeline/templates/deploy-infra-jobs.yml@InfraRepo` with `repository: InfraRepo`, and then
+  `dependsOn: InfraDeploy_<env>`.
 
 ### 5.5 Slot strategy (designed, switched off)
 
@@ -168,7 +168,7 @@ infra pipeline or app    ->  deploy/environments/<env>.yml  ->  deploy/templates
   The approval sits on the swap job so it is asked after the slot is ready; this needs a second Environment without
   approval for the slot deploy job.
 - Turn it on for prod by setting `deploymentSlot: staging` and `slotEnvironmentName: goat-prod-slot` in the app
-  repo's `deploy/environments/prod.yml`. Do this only after the Bicep work below is deployed.
+  repo's `deploy/pipeline/azure-pipelines-app.yml`, in the prod row of `environments`. Do this only after the Bicep work below is deployed.
 - Bicep work required first: the slot needs the same settings list as production (otherwise production receives
   missing settings after the swap), its own VNet integration, its own system-assigned identity with the same roles
   on Key Vault and Cosmos and anything else the app reaches by identity (add the slot principal to the RBAC arrays), and warm-up settings.
@@ -347,13 +347,11 @@ B. Unverified until the first real runs
 - Do not change code or deploy unless asked: often the owner only wants the pipeline written.
 - Cite official documentation (learn.microsoft.com, code.claude.com) when asked, with the exact page; if a page
   does not say something, say so. Mark anything unverified as unverified.
-- Verify before sending: run `python3 tools/verify_pipelines.py <app-repo> <infra-repo>`. Inject a deliberate mistake
   occasionally to confirm the checker still catches it.
 - Ask before widening scope. Prefer reducing parameters and duplication.
 
 ## 12. Tooling
 
-`tools/verify_pipelines.py` (copy it into one of the repos or keep it beside both clones). It parses every YAML file,
 expands the template subset used here, checks parameters, stage and job graph, which stages run for each branch,
 that templates contain no concrete names, and that the environment files agree. It is not Azure DevOps and does not
 check task behaviour.

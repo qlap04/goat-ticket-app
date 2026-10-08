@@ -8,67 +8,7 @@ parameters:
       - preprod
       - prod
 
-  - name: deploymentSlot
-    type: string
-    values:
-      - none
-      - staging
-
   - name: environmentName
-    type: string
-
-  - name: azureServiceConnection
-    type: string
-
-  - name: variableGroup
-    type: string
-
-  - name: artifactName
-    type: string
-
-  - name: apiPackageFolder
-    type: string
-
-  - name: functionPackageFolder
-    type: string
-
-  - name: smokeTestAllowSelfSignedCertificate
-    type: boolean
-
-  - name: createKeyVaultSecrets
-    type: boolean
-
-  - name: deployInfraAll
-    type: boolean
-
-  - name: infraJobName
-    type: string
-
-  - name: azureSubscriptionId
-    type: string
-
-  - name: azureLocation
-    type: string
-
-  - name: bicepVersion
-    type: string
-
-  - name: stackName
-    type: string
-
-  - name: actionOnUnmanageResources
-    type: string
-
-  - name: actionOnUnmanageResourceGroups
-    type: string
-
-  - name: denySettingsMode
-    type: string
-
-  - name: bypassStackOutOfSyncError
-    type: boolean
-
-  - name: secretGroup
     type: string
 
   - name: previousStage
@@ -77,6 +17,12 @@ parameters:
   - name: branchMatch
     type: string
 
+  - name: deploymentSlot
+    type: string
+    values:
+      - none
+      - staging
+
   - name: hotfixEnvironment
     type: string
     values:
@@ -84,6 +30,12 @@ parameters:
       - sit
       - uat
       - preprod
+
+  - name: deployInfraAll
+    type: boolean
+
+  - name: createKeyVaultSecrets
+    type: boolean
 
 stages:
   - stage: Deploy_${{ parameters.environment }}
@@ -107,59 +59,49 @@ stages:
       )
     jobs:
       - ${{ if eq(parameters.deployInfraAll, true) }}:
-          - template: deploy/templates/deploy-infra-jobs.yml@InfraRepo
+          - template: deploy/pipeline/templates/deploy-infra-jobs.yml@InfraRepo
             parameters:
               environment: ${{ parameters.environment }}
               environmentName: ${{ parameters.environmentName }}
-              deployJobName: ${{ parameters.infraJobName }}
               repository: InfraRepo
-              azureServiceConnection: ${{ parameters.azureServiceConnection }}
-              azureSubscriptionId: ${{ parameters.azureSubscriptionId }}
-              azureLocation: ${{ parameters.azureLocation }}
-              bicepVersion: ${{ parameters.bicepVersion }}
-              stackName: ${{ parameters.stackName }}
-              actionOnUnmanageResources: ${{ parameters.actionOnUnmanageResources }}
-              actionOnUnmanageResourceGroups: ${{ parameters.actionOnUnmanageResourceGroups }}
-              denySettingsMode: ${{ parameters.denySettingsMode }}
-              bypassStackOutOfSyncError: ${{ parameters.bypassStackOutOfSyncError }}
 
       - deployment: DeployApp_${{ parameters.environment }}
         displayName: "Deploy application to ${{ upper(parameters.environment) }}"
         timeoutInMinutes: 45
         ${{ if eq(parameters.deployInfraAll, true) }}:
-          dependsOn: ${{ parameters.infraJobName }}
+          dependsOn: InfraDeploy_${{ parameters.environment }}
         environment: ${{ parameters.environmentName }}
         variables:
-          - group: ${{ parameters.variableGroup }}
-          - group: ${{ parameters.secretGroup }}
+          - group: goat-app-dev
+          - group: goat-ticket-secrets-dev
         strategy:
           runOnce:
             deploy:
               steps:
                 - download: current
-                  artifact: ${{ parameters.artifactName }}
+                  artifact: drop
 
                 - ${{ if eq(parameters.createKeyVaultSecrets, true) }}:
                     - task: AzureCLI@2
-                      displayName: "Write application secrets to Key Vault"
+                      displayName: "Write Signing--TicketQrSigningKeyPem to Key Vault"
                       inputs:
-                        azureSubscription: ${{ parameters.azureServiceConnection }}
+                        azureSubscription: goat-ticket-connection
                         scriptType: bash
                         scriptLocation: inlineScript
                         inlineScript: |
                           az keyvault secret set \
                             --vault-name "$KEY_VAULT_NAME" \
                             --name "Signing--TicketQrSigningKeyPem" \
-                            --value "$TICKET_QR_SIGNING_KEY_VALUE" \
+                            --value "$SECRET_VALUE" \
                             --output none
                       env:
                         KEY_VAULT_NAME: $(keyVaultName)
-                        TICKET_QR_SIGNING_KEY_VALUE: $(ticketQrSigningKeyValue)
+                        SECRET_VALUE: $(ticketQrSigningKeyValue)
 
                 - task: AzureAppServiceSettings@1
                   displayName: "Apply application settings to Function App"
                   inputs:
-                    azureSubscription: ${{ parameters.azureServiceConnection }}
+                    azureSubscription: goat-ticket-connection
                     appName: $(functionAppName)
                     resourceGroupName: $(appResourceGroup)
                     appSettings: $(functionAppSettingsJson)
@@ -167,17 +109,17 @@ stages:
                 - task: AzureFunctionApp@2
                   displayName: "Deploy worker to Function App"
                   inputs:
-                    azureSubscription: ${{ parameters.azureServiceConnection }}
+                    azureSubscription: goat-ticket-connection
                     appType: functionAppLinux
                     appName: $(functionAppName)
-                    package: $(Pipeline.Workspace)/${{ parameters.artifactName }}/${{ parameters.functionPackageFolder }}/*.zip
+                    package: $(Pipeline.Workspace)/drop/func/*.zip
                     deploymentMethod: zipDeploy
 
                 - ${{ if ne(parameters.deploymentSlot, 'none') }}:
                     - task: AzureAppServiceSettings@1
                       displayName: "Apply application settings to the ${{ parameters.deploymentSlot }} slot"
                       inputs:
-                        azureSubscription: ${{ parameters.azureServiceConnection }}
+                        azureSubscription: goat-ticket-connection
                         appName: $(apiAppName)
                         resourceGroupName: $(appResourceGroup)
                         slotName: ${{ parameters.deploymentSlot }}
@@ -186,30 +128,28 @@ stages:
                     - task: AzureWebApp@1
                       displayName: "Deploy API to the ${{ parameters.deploymentSlot }} slot"
                       inputs:
-                        azureSubscription: ${{ parameters.azureServiceConnection }}
+                        azureSubscription: goat-ticket-connection
                         appType: webAppLinux
                         appName: $(apiAppName)
                         deployToSlotOrASE: true
                         resourceGroupName: $(appResourceGroup)
                         slotName: ${{ parameters.deploymentSlot }}
-                        package: $(Pipeline.Workspace)/${{ parameters.artifactName }}/${{ parameters.apiPackageFolder }}/*.zip
+                        package: $(Pipeline.Workspace)/drop/api/*.zip
                         deploymentMethod: zipDeploy
 
                     - script: |
                         curl --fail --silent --show-error --location --max-time 30 \
                           --retry 5 --retry-delay 10 --retry-all-errors \
                           --output /dev/null --write-out "HTTP %{http_code} from ${SMOKE_URL}\n" \
-                          ${SMOKE_INSECURE} "${SMOKE_URL}"
+                          --insecure "${SMOKE_URL}"
                       displayName: "Check that the ${{ parameters.deploymentSlot }} slot responds"
                       env:
                         SMOKE_URL: $(slotSmokeTestUrl)
-                        ${{ if eq(parameters.smokeTestAllowSelfSignedCertificate, true) }}:
-                          SMOKE_INSECURE: "--insecure"
 
                     - task: AzureAppServiceManage@0
                       displayName: "Swap ${{ parameters.deploymentSlot }} slot into production"
                       inputs:
-                        azureSubscription: ${{ parameters.azureServiceConnection }}
+                        azureSubscription: goat-ticket-connection
                         Action: "Swap Slots"
                         WebAppName: $(apiAppName)
                         ResourceGroupName: $(appResourceGroup)
@@ -220,7 +160,7 @@ stages:
                     - task: AzureAppServiceSettings@1
                       displayName: "Apply application settings to App Service"
                       inputs:
-                        azureSubscription: ${{ parameters.azureServiceConnection }}
+                        azureSubscription: goat-ticket-connection
                         appName: $(apiAppName)
                         resourceGroupName: $(appResourceGroup)
                         appSettings: $(appSettingsJson)
@@ -228,10 +168,10 @@ stages:
                     - task: AzureWebApp@1
                       displayName: "Deploy API to App Service"
                       inputs:
-                        azureSubscription: ${{ parameters.azureServiceConnection }}
+                        azureSubscription: goat-ticket-connection
                         appType: webAppLinux
                         appName: $(apiAppName)
-                        package: $(Pipeline.Workspace)/${{ parameters.artifactName }}/${{ parameters.apiPackageFolder }}/*.zip
+                        package: $(Pipeline.Workspace)/drop/api/*.zip
                         deploymentMethod: zipDeploy
 
       - job: SmokeTest_${{ parameters.environment }}
@@ -239,16 +179,14 @@ stages:
         timeoutInMinutes: 10
         dependsOn: DeployApp_${{ parameters.environment }}
         variables:
-          - group: ${{ parameters.variableGroup }}
+          - group: goat-app-dev
         steps:
           - checkout: none
           - script: |
               curl --fail --silent --show-error --location --max-time 30 \
                 --retry 5 --retry-delay 10 --retry-all-errors \
                 --output /dev/null --write-out "HTTP %{http_code} from ${SMOKE_URL}\n" \
-                ${SMOKE_INSECURE} "${SMOKE_URL}"
+                --insecure "${SMOKE_URL}"
             displayName: "Call the application address"
             env:
               SMOKE_URL: $(smokeTestUrl)
-              ${{ if eq(parameters.smokeTestAllowSelfSignedCertificate, true) }}:
-                SMOKE_INSECURE: "--insecure"
