@@ -65,7 +65,7 @@ resources:
     - repository: InfraRepo
       type: github
       name: qlap04/goat-ticket-infra
-      ref: refs/tags/infra-templates-v1.0.0
+      ref: refs/tags/infra-templates-v1.1.0
       endpoint: qlap04
 
 pool:
