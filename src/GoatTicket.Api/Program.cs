@@ -72,12 +72,15 @@ var app = builder.Build();
 
 app.UseMiddleware<ErrorHandlingMiddleware>(); // T022
 
-app.UseSwagger();
-app.UseSwaggerUI(options =>
+if (app.Configuration.GetValue("Swagger:Enabled", app.Environment.IsDevelopment()))
 {
-    options.SwaggerEndpoint("/swagger/v1/swagger.json", "Goat Ticket API v1");
-    options.ConfigureOAuth2(builder.Configuration);
-});
+    app.UseSwagger();
+    app.UseSwaggerUI(options =>
+    {
+        options.SwaggerEndpoint("/swagger/v1/swagger.json", "Goat Ticket API v1");
+        options.ConfigureOAuth2(builder.Configuration);
+    });
+}
 
 app.UseHttpsRedirection();
 app.UseAuthentication();

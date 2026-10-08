@@ -1,0 +1,136 @@
+name: "App Delivery - $(Build.SourceBranchName) - $(Date:yyyyMMdd)$(Rev:.r)"
+
+trigger:
+  branches:
+    include:
+      - develop
+
+pr:
+  branches:
+    include:
+      - develop
+      - main
+      - release/*
+
+parameters:
+  - name: deployInfraAll
+    displayName: "Deploy infrastructure before the application"
+    type: boolean
+    default: false
+
+  - name: createKeyVaultSecrets
+    displayName: "Write application secrets to Key Vault from the variable group"
+    type: boolean
+    default: false
+
+  - name: hotfixEnvironment
+    displayName: "Hotfix branches only: environment to deliver to"
+    type: string
+    default: dev
+    values:
+      - dev
+      - sit
+      - uat
+      - preprod
+
+  - name: azureLocation
+    displayName: "Deployment metadata location (must match the .bicepparam)"
+    type: string
+    default: southeastasia
+
+  - name: environments
+    displayName: "Delivery order (do not change)"
+    type: object
+    default:
+      - environment: dev
+        environmentName: goat-dev
+        previousStage: Build
+        branchMatch: "eq(variables['Build.SourceBranch'], 'refs/heads/develop')"
+        deploymentSlot: none
+      - environment: sit
+        environmentName: goat-sit
+        previousStage: Deploy_dev
+        branchMatch: "startsWith(variables['Build.SourceBranch'], 'refs/heads/release/')"
+        deploymentSlot: none
+      - environment: uat
+        environmentName: goat-uat
+        previousStage: Deploy_sit
+        branchMatch: "startsWith(variables['Build.SourceBranch'], 'refs/heads/release/')"
+        deploymentSlot: none
+      - environment: preprod
+        environmentName: goat-preprod
+        previousStage: Deploy_uat
+        branchMatch: "eq(variables['Build.SourceBranch'], 'refs/heads/main')"
+        deploymentSlot: none
+      - environment: prod
+        environmentName: goat-prod
+        previousStage: Deploy_preprod
+        branchMatch: "eq(variables['Build.SourceBranch'], 'refs/heads/main')"
+        deploymentSlot: none
+
+resources:
+  repositories:
+    - repository: InfraRepo
+      type: github
+      name: qlap04/goat-ticket-infra
+      ref: refs/tags/infra-templates-v1.0.0
+      endpoint: qlap04
+
+pool:
+  vmImage: ubuntu-24.04
+
+stages:
+  - stage: Build
+    displayName: "Build and test application"
+    jobs:
+      - template: deploy/templates/build-test.yml
+        parameters:
+          dotnetVersion: 8.x
+          buildConfiguration: Release
+          solution: GoatTicket.sln
+          apiProject: src/GoatTicket.Api/GoatTicket.Api.csproj
+          functionProject: src/GoatTicket.Functions/GoatTicket.Functions.csproj
+          unitTestProject: tests/GoatTicket.UnitTests/GoatTicket.UnitTests.csproj
+          containerTestProjects:
+            - name: contract tests
+              project: tests/GoatTicket.ContractTests/GoatTicket.ContractTests.csproj
+            - name: integration tests
+              project: tests/GoatTicket.IntegrationTests/GoatTicket.IntegrationTests.csproj
+          artifactName: drop
+          apiPackageFolder: api
+          functionPackageFolder: func
+          buildTimeoutMinutes: 30
+          containerTestTimeoutMinutes: 45
+
+  - ${{ each env in parameters.environments }}:
+      - template: deploy/templates/deploy-env-stage.yml
+        parameters:
+          environment: ${{ env.environment }}
+          environmentName: ${{ env.environmentName }}
+          previousStage: ${{ env.previousStage }}
+          branchMatch: ${{ env.branchMatch }}
+          deploymentSlot: ${{ env.deploymentSlot }}
+
+          hotfixEnvironment: ${{ parameters.hotfixEnvironment }}
+          deployInfraAll: ${{ parameters.deployInfraAll }}
+          createKeyVaultSecrets: ${{ parameters.createKeyVaultSecrets }}
+
+          variableGroup: goat-app-dev
+          secretGroup: goat-ticket-secrets-dev
+          smokeTestAllowSelfSignedCertificate: true
+
+          azureServiceConnection: goat-ticket-connection
+          azureSubscriptionId: 3a69333f-bef6-45a8-9206-f82c71e24d70
+          azureLocation: ${{ parameters.azureLocation }}
+
+          artifactName: drop
+          apiPackageFolder: api
+          functionPackageFolder: func
+
+          infraJobName: InfraDeploy_${{ env.environment }}
+          bicepVersion: 0.47.16
+          stackName: stack-goat-dev
+          actionOnUnmanageResources: detach
+          actionOnUnmanageResourceGroups: detach
+          denySettingsMode: none
+          bypassStackOutOfSyncError: false

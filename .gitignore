@@ -38,3 +38,8 @@ appsettings.Local.json
 ## OS
 .DS_Store
 Thumbs.db
+
+# Key material must never be committed. A private key was once leaked from this repository.
+*.pem
+*.pfx
+*.key

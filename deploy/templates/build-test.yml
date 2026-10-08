@@ -1,0 +1,148 @@
+parameters:
+  - name: dotnetVersion
+    type: string
+
+  - name: buildConfiguration
+    type: string
+
+  - name: solution
+    type: string
+
+  - name: apiProject
+    type: string
+
+  - name: functionProject
+    type: string
+
+  - name: unitTestProject
+    type: string
+
+  - name: containerTestProjects
+    type: object
+
+  - name: artifactName
+    type: string
+
+  - name: apiPackageFolder
+    type: string
+
+  - name: functionPackageFolder
+    type: string
+
+  - name: buildTimeoutMinutes
+    type: number
+
+  - name: containerTestTimeoutMinutes
+    type: number
+
+jobs:
+  - job: BuildAndTest
+    displayName: "Build, check and unit test"
+    timeoutInMinutes: ${{ parameters.buildTimeoutMinutes }}
+    steps:
+      - checkout: self
+        fetchDepth: 1
+
+      - task: UseDotNet@2
+        displayName: "Install .NET SDK"
+        inputs:
+          packageType: sdk
+          version: ${{ parameters.dotnetVersion }}
+
+      - task: DotNetCoreCLI@2
+        displayName: "Restore packages"
+        inputs:
+          command: restore
+          projects: ${{ parameters.solution }}
+
+      - task: DotNetCoreCLI@2
+        displayName: "Build solution"
+        inputs:
+          command: build
+          projects: ${{ parameters.solution }}
+          arguments: --configuration ${{ parameters.buildConfiguration }} --no-restore
+
+      - task: DotNetCoreCLI@2
+        displayName: "Check code formatting"
+        inputs:
+          command: custom
+          custom: format
+          arguments: ${{ parameters.solution }} --verify-no-changes
+
+      - task: DotNetCoreCLI@2
+        displayName: "Check packages for known vulnerabilities"
+        inputs:
+          command: custom
+          custom: list
+          arguments: ${{ parameters.solution }} package --vulnerable --include-transitive
+
+      - task: MicrosoftSecurityDevOps@1
+        displayName: "Scan code for exposed credentials"
+        inputs:
+          tools: credscan
+          categories: code
+          break: false
+          publish: true
+
+      - task: DotNetCoreCLI@2
+        displayName: "Run unit tests"
+        inputs:
+          command: test
+          projects: ${{ parameters.unitTestProject }}
+          arguments: --configuration ${{ parameters.buildConfiguration }}
+
+      - task: DotNetCoreCLI@2
+        displayName: "Package API"
+        inputs:
+          command: publish
+          publishWebProjects: false
+          projects: ${{ parameters.apiProject }}
+          arguments: >-
+            --configuration ${{ parameters.buildConfiguration }}
+            --output $(Build.ArtifactStagingDirectory)/${{ parameters.apiPackageFolder }}
+          zipAfterPublish: true
+          modifyOutputPath: false
+
+      - task: DotNetCoreCLI@2
+        displayName: "Package Function App"
+        inputs:
+          command: publish
+          publishWebProjects: false
+          projects: ${{ parameters.functionProject }}
+          arguments: >-
+            --configuration ${{ parameters.buildConfiguration }}
+            --output $(Build.ArtifactStagingDirectory)/${{ parameters.functionPackageFolder }}
+          zipAfterPublish: true
+          modifyOutputPath: false
+
+      - publish: $(Build.ArtifactStagingDirectory)
+        artifact: ${{ parameters.artifactName }}
+        displayName: "Publish build artifact"
+
+  - job: ContainerTests
+    displayName: "Run contract and integration tests against containers"
+    timeoutInMinutes: ${{ parameters.containerTestTimeoutMinutes }}
+    steps:
+      - checkout: self
+        fetchDepth: 1
+
+      - script: |
+          docker system prune -a --volumes -f
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+            /usr/local/share/boost /usr/share/swift /opt/hostedtoolcache
+          df -h /
+        displayName: "Free disk space on the agent"
+
+      - task: UseDotNet@2
+        displayName: "Install .NET SDK"
+        inputs:
+          packageType: sdk
+          version: ${{ parameters.dotnetVersion }}
+
+      - ${{ each suite in parameters.containerTestProjects }}:
+          - task: DotNetCoreCLI@2
+            displayName: "Run ${{ suite.name }}"
+            inputs:
+              command: test
+              projects: ${{ suite.project }}
+              arguments: --configuration ${{ parameters.buildConfiguration }}

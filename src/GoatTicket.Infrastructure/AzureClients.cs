@@ -26,9 +26,9 @@ public static class AzureClients
             return new BlobServiceClient(connectionString);
         }
 
-        var accountUri = configuration["Storage:AccountUri"]
-            ?? throw new InvalidOperationException("Storage:AccountUri must be configured outside Development.");
-        return new BlobServiceClient(new Uri(accountUri), new DefaultAzureCredential());
+        var blobServiceUri = configuration["Storage:BlobServiceUri"]
+            ?? throw new InvalidOperationException("Storage:BlobServiceUri must be configured outside Development.");
+        return new BlobServiceClient(new Uri(blobServiceUri), new DefaultAzureCredential());
     }
 
     public static QueueServiceClient CreateQueueServiceClient(IConfiguration configuration, IHostEnvironment environment)
@@ -41,9 +41,9 @@ public static class AzureClients
             return new QueueServiceClient(connectionString, options);
         }
 
-        var accountUri = configuration["Storage:AccountUri"]
-            ?? throw new InvalidOperationException("Storage:AccountUri must be configured outside Development.");
-        return new QueueServiceClient(new Uri(accountUri), new DefaultAzureCredential(), options);
+        var queueServiceUri = configuration["Storage:QueueServiceUri"]
+            ?? throw new InvalidOperationException("Storage:QueueServiceUri must be configured outside Development.");
+        return new QueueServiceClient(new Uri(queueServiceUri), new DefaultAzureCredential(), options);
     }
 
     public static CosmosClient CreateCosmosClient(IConfiguration configuration, IHostEnvironment environment)
@@ -102,6 +102,8 @@ public static class AzureClients
 
         var accountUri = configuration["Sql:AccountUri"]
             ?? throw new InvalidOperationException("Sql:AccountUri must be configured outside Development.");
-        return $"Server={accountUri};Database=GoatTicket;Authentication=Active Directory Default;Encrypt=True;";
+        var databaseName = configuration["Sql:DatabaseName"]
+            ?? throw new InvalidOperationException("Sql:DatabaseName must be configured outside Development.");
+        return $"Server={accountUri};Database={databaseName};Authentication=Active Directory Default;Encrypt=True;";
     }
 }

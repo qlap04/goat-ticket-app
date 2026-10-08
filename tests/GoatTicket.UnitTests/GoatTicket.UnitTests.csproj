@@ -1,5 +1,11 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
+  <!--
+    Unit tests only: no Docker, no Testcontainers, no database. The suites that need a real SQL
+    Server or Azurite container live in GoatTicket.IntegrationTests, so this project stays runnable
+    on any machine and the pipeline job that produces the build artifact needs no container images.
+  -->
+
   <PropertyGroup>
     <TargetFramework>net8.0</TargetFramework>
     <IsPackable>false</IsPackable>
@@ -12,17 +18,10 @@
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
-    <PackageReference Include="Testcontainers.MsSql" Version="3.10.0" />
-    <PackageReference Include="Testcontainers.Azurite" Version="3.10.0" />
-    <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" Version="8.0.10" />
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\GoatTicket.Domain\GoatTicket.Domain.csproj" />
-    <ProjectReference Include="..\..\src\GoatTicket.Infrastructure\GoatTicket.Infrastructure.csproj" />
     <ProjectReference Include="..\..\src\GoatTicket.Shared\GoatTicket.Shared.csproj" />
-    <ProjectReference Include="..\..\src\GoatTicket.Api\GoatTicket.Api.csproj" />
-    <ProjectReference Include="..\..\src\GoatTicket.Functions\GoatTicket.Functions.csproj" />
   </ItemGroup>
 
 </Project>
