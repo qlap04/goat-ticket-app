@@ -1,9 +1,6 @@
 name: "App Delivery - $(Build.SourceBranchName) - $(Date:yyyyMMdd)$(Rev:.r)"
 
-trigger:
-  branches:
-    include:
-      - develop
+trigger: none
 
 pr:
   branches:

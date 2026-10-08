@@ -193,8 +193,9 @@ main ──► hotfix/Y ──► main + develop
 
 Rules that hold for this project:
 
-- `develop` is where work lands. The application pipeline triggers on `develop`
-  only, so a push here builds and delivers DEV.
+- `develop` is where work lands. Neither pipeline runs on a push: both are
+  `trigger: none`, so every run is started by hand. Pull requests into `develop`,
+  `main` and `release/*` still build and test, and never deploy.
 - `release/*` and `hotfix/*` are **transient**: create them when releasing or
   fixing, delete them after the merge. The app repository happens to keep
   `release/1.0.0` and `hotfix/mock-test` for demonstrating the pipeline; that is

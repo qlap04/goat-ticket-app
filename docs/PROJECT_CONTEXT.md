@@ -125,8 +125,9 @@ Stage Deploy_<env>   dev, sit, uat, preprod, prod  (chained, each skippable)
 ```
 
 - Parameters at run time: `deployInfraAll` (default false), `hotfixEnvironment` (dev, sit, uat, preprod).
-- Triggers re-enabled for `develop`, `main`, `release/*`, `hotfix/*`. Runs started by a trigger always use
-  `deployInfraAll = false`.
+- `trigger: none`: no push starts the application pipeline. Every run is started by hand, so a delivery is
+  always a decision. Pull requests into `develop`, `main` and `release/*` still build and test, and the stage
+  template refuses to deploy a pull request build.
 - No automatic rollback (mentor decision). A red smoke test only reports. A person swaps the slots again or
   reruns an earlier run.
 
