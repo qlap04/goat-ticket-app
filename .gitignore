@@ -43,3 +43,8 @@ Thumbs.db
 *.pem
 *.pfx
 *.key
+
+# Other repositories and working notes that live inside this checkout but are not part of it.
+# goat-ticket-infra was once committed here as an orphan submodule entry by accident.
+infra/
+claude-skill/
