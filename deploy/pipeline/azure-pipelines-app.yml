@@ -31,7 +31,7 @@ parameters:
       - preprod
 
   - name: environments
-    displayName: "Delivery order (do not change)"
+    displayName: "Environments to deliver, in order"
     type: object
     default:
       - environment: dev
@@ -65,7 +65,7 @@ resources:
     - repository: InfraRepo
       type: github
       name: qlap04/goat-ticket-infra
-      ref: refs/tags/infra-templates-v1.1.0
+      ref: refs/tags/infra-templates-v1.1.1
       endpoint: qlap04
 
 pool:
