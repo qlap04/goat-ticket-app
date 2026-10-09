@@ -11,6 +11,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.EntityFrameworkCore;
 using QuestPDF.Infrastructure;
 using Serilog;
+using Microsoft.Extensions.Configuration.AzureAppConfiguration;
 
 QuestPDF.Settings.License = LicenseType.Community;
 
@@ -18,11 +19,32 @@ var host = new HostBuilder()
     .ConfigureFunctionsWorkerDefaults()
     .ConfigureAppConfiguration((context, configBuilder) =>
     {
-        // Key Vault (T013) — only outside Development; local dev reads secrets straight from
+        // App Configuration, then Key Vault — only outside Development; local dev reads
         // local.settings.json (research.md §2's local-dev exception).
+        //
+        // Unlabelled keys are shared by every environment; the labelled read that follows overrides
+        // them for this one.
         if (!context.HostingEnvironment.IsDevelopment())
         {
             var builtConfig = configBuilder.Build();
+
+            var appConfigurationEndpoint = builtConfig["AppConfiguration:Endpoint"];
+            if (!string.IsNullOrEmpty(appConfigurationEndpoint))
+            {
+                var label = builtConfig["AppConfiguration:Label"];
+                configBuilder.AddAzureAppConfiguration(options =>
+                {
+                    options.Connect(new Uri(appConfigurationEndpoint), new DefaultAzureCredential())
+                        .Select(KeyFilter.Any, LabelFilter.Null);
+
+                    if (!string.IsNullOrEmpty(label))
+                    {
+                        options.Select(KeyFilter.Any, label);
+                    }
+                });
+                builtConfig = configBuilder.Build();
+            }
+
             var keyVaultUri = builtConfig["KeyVault:Uri"];
             if (!string.IsNullOrEmpty(keyVaultUri))
             {

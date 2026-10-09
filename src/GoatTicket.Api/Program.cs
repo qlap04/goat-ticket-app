@@ -11,13 +11,39 @@ using Microsoft.Azure.Cosmos;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Identity.Web;
 using Serilog;
+using Microsoft.Extensions.Configuration.AzureAppConfiguration;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Key Vault (T013) — only outside Development; local dev reads secrets straight from
-// appsettings.Development.json (research.md §2's local-dev exception).
+// App Configuration — only outside Development; local dev reads appsettings.Development.json
+// (research.md §2's local-dev exception).
+//
+// Two Select calls, in this order: the unlabelled keys are the values every environment shares, and
+// the labelled keys override them for this one. The second read wins, so adding an environment means
+// adding a label rather than restating the whole set.
+//
+// AppConfiguration:Endpoint and AppConfiguration:Label arrive as App Service application settings,
+// written by the delivery pipeline. Everything else the application reads comes from the store.
 if (!builder.Environment.IsDevelopment())
 {
+    var appConfigurationEndpoint = builder.Configuration["AppConfiguration:Endpoint"];
+    if (!string.IsNullOrEmpty(appConfigurationEndpoint))
+    {
+        var label = builder.Configuration["AppConfiguration:Label"];
+        builder.Configuration.AddAzureAppConfiguration(options =>
+        {
+            options.Connect(new Uri(appConfigurationEndpoint), new DefaultAzureCredential())
+                .Select(KeyFilter.Any, LabelFilter.Null);
+
+            if (!string.IsNullOrEmpty(label))
+            {
+                options.Select(KeyFilter.Any, label);
+            }
+        });
+    }
+
+    // Key Vault (T013). Still read directly, because the signing key is a secret the store only
+    // ever holds a reference to.
     var keyVaultUri = builder.Configuration["KeyVault:Uri"];
     if (!string.IsNullOrEmpty(keyVaultUri))
     {
