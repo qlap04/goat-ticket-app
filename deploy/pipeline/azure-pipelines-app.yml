@@ -30,36 +30,6 @@ parameters:
       - uat
       - preprod
 
-  - name: environments
-    displayName: "Environments to deliver, in order"
-    type: object
-    default:
-      - environment: dev
-        environmentName: goat-dev
-        previousStage: Build
-        branchMatch: "eq(variables['Build.SourceBranch'], 'refs/heads/develop')"
-        deploymentSlot: none
-      - environment: sit
-        environmentName: goat-sit
-        previousStage: Deploy_dev
-        branchMatch: "startsWith(variables['Build.SourceBranch'], 'refs/heads/release/')"
-        deploymentSlot: none
-      - environment: uat
-        environmentName: goat-uat
-        previousStage: Deploy_sit
-        branchMatch: "startsWith(variables['Build.SourceBranch'], 'refs/heads/release/')"
-        deploymentSlot: none
-      - environment: preprod
-        environmentName: goat-preprod
-        previousStage: Deploy_uat
-        branchMatch: "eq(variables['Build.SourceBranch'], 'refs/heads/main')"
-        deploymentSlot: none
-      - environment: prod
-        environmentName: goat-prod
-        previousStage: Deploy_preprod
-        branchMatch: "eq(variables['Build.SourceBranch'], 'refs/heads/main')"
-        deploymentSlot: none
-
 resources:
   repositories:
     - repository: InfraRepo
@@ -77,14 +47,8 @@ stages:
     jobs:
       - template: templates/build-test.yml
 
-  - ${{ each env in parameters.environments }}:
-      - template: templates/deploy-env-stage.yml
-        parameters:
-          environment: ${{ env.environment }}
-          environmentName: ${{ env.environmentName }}
-          previousStage: ${{ env.previousStage }}
-          branchMatch: ${{ env.branchMatch }}
-          deploymentSlot: ${{ env.deploymentSlot }}
-          hotfixEnvironment: ${{ parameters.hotfixEnvironment }}
-          deployInfraAll: ${{ parameters.deployInfraAll }}
-          createKeyVaultSecrets: ${{ parameters.createKeyVaultSecrets }}
+  - template: templates/environments.yml
+    parameters:
+      hotfixEnvironment: ${{ parameters.hotfixEnvironment }}
+      deployInfraAll: ${{ parameters.deployInfraAll }}
+      createKeyVaultSecrets: ${{ parameters.createKeyVaultSecrets }}
