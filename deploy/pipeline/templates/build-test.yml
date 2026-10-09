@@ -39,6 +39,12 @@ jobs:
           custom: list
           arguments: GoatTicket.sln package --vulnerable --include-transitive
 
+      - task: UseDotNet@2
+        displayName: "Install .NET 6 runtime for the credential scanner"
+        inputs:
+          packageType: runtime
+          version: 6.x
+
       - task: MicrosoftSecurityDevOps@1
         displayName: "Scan code for exposed credentials"
         inputs:
