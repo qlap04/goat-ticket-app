@@ -46,7 +46,8 @@ variables:
         value: kv-goat-dev-cr7
       - name: slotSmokeTestUrl
         value: https://app-goat-api-dev-cr7-staging.azurewebsites.net/swagger/index.html
-      - group: goat-ticket-secrets-prod
+      # Mock: prod shares the dev secrets, the prod group does not exist
+      - group: goat-ticket-secrets-dev
   - ${{ else }}:
       - name: armConnection
         value: goat-ticket-connection
