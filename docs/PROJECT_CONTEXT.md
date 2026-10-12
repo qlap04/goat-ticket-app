@@ -106,7 +106,7 @@ The repositories may still contain an earlier intermediate version of these file
 | any other branch | build and integration tests only | none |
 | pull request | build and integration tests only, never deploys | none |
 
-Production is delivered from `main` only; the allow-list of `hotfixEnvironment` has no `prod`, both in the root file and
+Production is delivered from `main` only; the allow-list of `hotfixEnv` has no `prod`, both in the root file and
 in the stage template. All five deployment stages are always defined; the branch decides which run. Mock mode: every environment still
 delivers to the dev resources, so only the stage name, Environment and approval differ.
 
@@ -123,7 +123,7 @@ Stage Deploy_<env>   dev, sit, uat, preprod, prod  (chained, each skippable)
   slot mode  (deploymentSlot staging): DeploySlot_<env>  then  SwapSlot_<env> (approval)  then  SmokeTest_<env>
 ```
 
-- Parameters at run time: `deployInfraAll` (default false), `hotfixEnvironment` (dev, sit, uat, preprod).
+- Parameters at run time: `deployInfraAll` (default false), `hotfixEnv` (dev, sit, uat, preprod).
 - `trigger: none`: no push starts the application pipeline. Every run is started by hand, so a delivery is
   always a decision. Pull requests into `develop`, `main` and `release/*` still build and test, and the stage
   template refuses to deploy a pull request build.

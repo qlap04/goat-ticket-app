@@ -2,26 +2,27 @@ name: "App Delivery - $(Build.SourceBranchName) - $(Date:yyyyMMdd)$(Rev:.r)"
 
 trigger: none
 
-pr:
-  branches:
-    include:
-      - develop
-      - main
-      - release/*
-
 parameters:
   - name: deployInfraAll
-    displayName: "Deploy infrastructure before the application"
+    displayName: "Deploy Infra"
     type: boolean
     default: false
+
+  - name: deployScope
+    displayName: "Infra scope"
+    type: string
+    default: app
+    values:
+      - all
+      - app
 
   - name: createKeyVaultSecrets
-    displayName: "Write application secrets to Key Vault from the variable group"
+    displayName: "Write vault secrets"
     type: boolean
     default: false
 
-  - name: hotfixEnvironment
-    displayName: "Hotfix branches only: environment to deliver to"
+  - name: hotfixEnv
+    displayName: "Hotfix environment"
     type: string
     default: dev
     values:
@@ -35,20 +36,31 @@ resources:
     - repository: InfraRepo
       type: github
       name: qlap04/goat-ticket-infra
-      ref: refs/tags/infra-templates-v1.2.1
+      ref: refs/tags/infra-templates-v2.1.1
       endpoint: qlap04
 
 pool:
   vmImage: ubuntu-24.04
 
+variables:
+  branch_dev: refs/heads/develop
+  branch_sit: refs/heads/release/
+  branch_uat: refs/heads/release/
+  branch_preprod: refs/heads/main
+  branch_prod: refs/heads/main
+
 stages:
   - stage: Build
-    displayName: "Build and test application"
+    displayName: "Build and test"
     jobs:
       - template: templates/build-test.yml
 
-  - template: templates/environments.yml
-    parameters:
-      hotfixEnvironment: ${{ parameters.hotfixEnvironment }}
-      deployInfraAll: ${{ parameters.deployInfraAll }}
-      createKeyVaultSecrets: ${{ parameters.createKeyVaultSecrets }}
+  #Deploy environments
+  - ${{ each environment in split('dev,sit,uat,preprod,prod', ',') }}:
+      - template: templates/deploy-env-stage.yml
+        parameters:
+          environment: ${{ environment }}
+          hotfixEnv: ${{ parameters.hotfixEnv }}
+          deployInfraAll: ${{ parameters.deployInfraAll }}
+          deployScope: ${{ parameters.deployScope }}
+          createKeyVaultSecrets: ${{ parameters.createKeyVaultSecrets }}

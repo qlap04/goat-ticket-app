@@ -20,11 +20,12 @@ to commits that change only pipeline files while the Azure environment is not ru
 
 ## Rules
 
-- Only what varies is a template parameter. The service connection, the variable groups and the stack are the same
-  for every stage, so they are fixed in the template. Resource names and addresses come from the `goat-app-<env>`
-  variable group at run time, because Azure decides what an instance is called.
-- No pipeline-level variable group. Each job loads only the group it needs: `goat-app-<env>` for deployment,
-  `goat-app-integration` for tests. Application settings are one JSON string, `appSettingsJson`, in the group.
+- Only what varies is a template parameter. The service connection and the stack are the same for every stage, so
+  they are fixed in the template. Resource names, addresses and the application settings are values, not secrets:
+  they live in `deploy/pipeline/templates/environment-variables.yml`, one if/else per environment.
+- Variable groups hold secrets only: `goat-ticket-secrets-<env>` for deployment, `goat-app-integration` for tests. No
+  pipeline-level variable group. Each job loads only the group it needs. Application settings are one JSON string,
+  `appSettingsJson`, built in that file from a YAML list.
 - Infra comes from the infra repo (`InfraRepo`, pinned to a tag) through
   `deploy/pipeline/templates/deploy-infra-jobs.yml@InfraRepo`, only when `deployInfraAll` is true. It runs first in the
   stage: an infrastructure deploy replaces the application settings the pipeline wrote.

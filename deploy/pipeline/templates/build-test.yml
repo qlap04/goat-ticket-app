@@ -1,3 +1,14 @@
+parameters:
+  - name: testSecrets
+    type: object
+    default:
+      - variableName: ticketQrSigningKeyPem
+        envName: Signing__TicketQrSigningKeyPem
+      - variableName: jwtSigningKey
+        envName: Jwt__SigningKey
+      - variableName: mockExternalApiKey
+        envName: ExternalApi__ApiKey
+
 jobs:
   - job: BuildAndTest
     displayName: "Build, check and unit test"
@@ -6,6 +17,7 @@ jobs:
       - checkout: self
         fetchDepth: 1
 
+      #Restore and Build 
       - task: UseDotNet@2
         displayName: "Install .NET SDK"
         inputs:
@@ -13,18 +25,13 @@ jobs:
           version: 8.x
 
       - task: DotNetCoreCLI@2
-        displayName: "Restore packages"
-        inputs:
-          command: restore
-          projects: GoatTicket.sln
-
-      - task: DotNetCoreCLI@2
         displayName: "Build solution"
         inputs:
           command: build
           projects: GoatTicket.sln
-          arguments: --configuration Release --no-restore
+          arguments: --configuration Release
 
+      #Validate code
       - task: DotNetCoreCLI@2
         displayName: "Check code formatting"
         inputs:
@@ -32,34 +39,32 @@ jobs:
           custom: format
           arguments: GoatTicket.sln --verify-no-changes
 
+      #Security Scan
       - task: DotNetCoreCLI@2
-        displayName: "Check packages for known vulnerabilities"
+        displayName: "Check vulnerabilities"
         inputs:
           command: custom
           custom: list
           arguments: GoatTicket.sln package --vulnerable --include-transitive
 
-      - task: UseDotNet@2
-        displayName: "Install .NET 6 runtime for the credential scanner"
-        inputs:
-          packageType: runtime
-          version: 6.x
-
       - task: MicrosoftSecurityDevOps@1
-        displayName: "Scan code for exposed credentials"
+        displayName: "Scan credentials"
         inputs:
           tools: credscan
           categories: code
           break: false
           publish: true
 
+
+      # Run multi-unit test
       - task: DotNetCoreCLI@2
         displayName: "Run unit tests"
         inputs:
           command: test
-          projects: tests/GoatTicket.UnitTests/GoatTicket.UnitTests.csproj
+          projects: tests/**/*UnitTests.csproj
           arguments: --configuration Release
 
+        #Publish package
       - task: DotNetCoreCLI@2
         displayName: "Package API"
         inputs:
@@ -67,7 +72,6 @@ jobs:
           publishWebProjects: false
           projects: src/GoatTicket.Api/GoatTicket.Api.csproj
           arguments: --configuration Release --output $(Build.ArtifactStagingDirectory)/api
-          zipAfterPublish: true
           modifyOutputPath: false
 
       - task: DotNetCoreCLI@2
@@ -77,15 +81,15 @@ jobs:
           publishWebProjects: false
           projects: src/GoatTicket.Functions/GoatTicket.Functions.csproj
           arguments: --configuration Release --output $(Build.ArtifactStagingDirectory)/func
-          zipAfterPublish: true
           modifyOutputPath: false
 
       - publish: $(Build.ArtifactStagingDirectory)
         artifact: drop
         displayName: "Publish build artifact"
 
-  - job: ContainerTests
-    displayName: "Run contract and integration tests against containers"
+  #Integration test
+  - job: Integration test
+    displayName: "Integration tests"
     timeoutInMinutes: 45
     variables:
       - group: goat-app-integration
@@ -98,7 +102,7 @@ jobs:
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
             /usr/local/share/boost /usr/share/swift /opt/hostedtoolcache
           df -h /
-        displayName: "Free disk space on the agent"
+        displayName: "Free disk"
 
       - task: UseDotNet@2
         displayName: "Install .NET SDK"
@@ -107,19 +111,13 @@ jobs:
           version: 8.x
 
       - task: DotNetCoreCLI@2
-        displayName: "Run contract tests"
+        displayName: "Run container tests"
         env:
-          APP_SETTINGS_JSON: $(appSettingsJson)
+          ${{ each secret in parameters.testSecrets }}:
+            ${{ secret.envName }}: $(${{ secret.variableName }})
         inputs:
           command: test
-          projects: tests/GoatTicket.ContractTests/GoatTicket.ContractTests.csproj
-          arguments: --configuration Release
-
-      - task: DotNetCoreCLI@2
-        displayName: "Run integration tests"
-        env:
-          APP_SETTINGS_JSON: $(appSettingsJson)
-        inputs:
-          command: test
-          projects: tests/GoatTicket.IntegrationTests/GoatTicket.IntegrationTests.csproj
+          projects: |
+            tests/GoatTicket.ContractTests/GoatTicket.ContractTests.csproj
+            tests/GoatTicket.IntegrationTests/GoatTicket.IntegrationTests.csproj
           arguments: --configuration Release

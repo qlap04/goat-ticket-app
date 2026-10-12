@@ -1,38 +1,25 @@
 parameters:
   - name: environment
     type: string
-    values:
-      - dev
-      - sit
-      - uat
-      - preprod
-      - prod
-
-  - name: environmentName
-    type: string
-
-  - name: previousStage
-    type: string
-
-  - name: branchMatch
-    type: string
 
   - name: deploymentSlot
     type: string
+    default: none
     values:
       - none
       - staging
 
-  - name: hotfixEnvironment
+  - name: hotfixEnv
     type: string
-    values:
-      - dev
-      - sit
-      - uat
-      - preprod
 
   - name: deployInfraAll
     type: boolean
+
+  - name: deployScope
+    type: string
+    values:
+      - all
+      - app
 
   - name: createKeyVaultSecrets
     type: boolean
@@ -48,53 +35,59 @@ parameters:
 stages:
   - stage: Deploy_${{ parameters.environment }}
     displayName: "Deliver to ${{ upper(parameters.environment) }}"
-    dependsOn:
-      - Build
-      - ${{ if ne(parameters.previousStage, 'Build') }}:
-          - ${{ parameters.previousStage }}
+    #Run conditions
     condition: >-
       and(
+        not(canceled()),
+        not(failed()),
         ne(variables['Build.Reason'], 'PullRequest'),
-        in(dependencies.Build.result, 'Succeeded', 'SucceededWithIssues'),
-        in(dependencies.${{ parameters.previousStage }}.result, 'Succeeded', 'SucceededWithIssues', 'Skipped'),
         or(
-          ${{ parameters.branchMatch }},
+          startsWith(variables['Build.SourceBranch'], variables['branch_${{ parameters.environment }}']),
           and(
             startsWith(variables['Build.SourceBranch'], 'refs/heads/hotfix/'),
-            eq('${{ parameters.hotfixEnvironment }}', '${{ parameters.environment }}')
+            eq('${{ parameters.hotfixEnv }}', '${{ parameters.environment }}')
           )
         )
       )
     jobs:
+      #Deploy Infra
       - ${{ if eq(parameters.deployInfraAll, true) }}:
           - template: deploy/pipeline/templates/deploy-infra-jobs.yml@InfraRepo
             parameters:
               environment: ${{ parameters.environment }}
-              environmentName: ${{ parameters.environmentName }}
               repository: InfraRepo
+              deployScope: ${{ parameters.deployScope }}
+              abcobject:
+                owner: goat-team
 
+      #Deploy App and Func
       - deployment: DeployApp_${{ parameters.environment }}
         displayName: "Deploy application to ${{ upper(parameters.environment) }}"
         timeoutInMinutes: 45
+        
+        # Check deploy infra all
         ${{ if eq(parameters.deployInfraAll, true) }}:
           dependsOn: InfraDeploy_${{ parameters.environment }}
-        environment: ${{ parameters.environmentName }}
+        environment: goat-${{ parameters.environment }}
         variables:
-          - group: goat-app-dev
-          - group: goat-ticket-secrets-dev
+          - template: environment-variables.yml
+            parameters:
+              environment: ${{ parameters.environment }}
         strategy:
           runOnce:
             deploy:
               steps:
+                #Get artifact
                 - download: current
                   artifact: drop
-
+                
+                #create keys Vault
                 - ${{ if eq(parameters.createKeyVaultSecrets, true) }}:
                   - ${{ each secret in parameters.keyVaultSecrets }}:
                       - task: AzureCLI@2
-                        displayName: "Write ${{ secret.secretName }} to Key Vault"
+                        displayName: "Write ${{ secret.secretName }}"
                         inputs:
-                          azureSubscription: goat-ticket-connection
+                          azureSubscription: ${{ variables.armConnection }}
                           scriptType: bash
                           scriptLocation: inlineScript
                           inlineScript: |
@@ -108,95 +101,65 @@ stages:
                           SECRET_NAME: ${{ secret.secretName }}
                           SECRET_VALUE: $(${{ secret.variableName }})
 
+                #Deploy Function
                 - task: AzureAppServiceSettings@1
-                  displayName: "Apply application settings to Function App"
+                  displayName: "Apply worker settings"
                   inputs:
-                    azureSubscription: goat-ticket-connection
+                    azureSubscription: ${{ variables.armConnection }}
                     appName: $(functionAppName)
                     resourceGroupName: $(appResourceGroup)
                     appSettings: $(functionAppSettingsJson)
 
                 - task: AzureFunctionApp@2
-                  displayName: "Deploy worker to Function App"
+                  displayName: "Deploy worker"
                   inputs:
-                    azureSubscription: goat-ticket-connection
+                    azureSubscription: ${{ variables.armConnection }}
                     appType: functionAppLinux
                     appName: $(functionAppName)
                     package: $(Pipeline.Workspace)/drop/func/*.zip
                     deploymentMethod: zipDeploy
 
+                #Deploy API
+                - task: AzureAppServiceSettings@1
+                  displayName: "Apply API settings"
+                  inputs:
+                    azureSubscription: ${{ variables.armConnection }}
+                    appName: $(apiAppName)
+                    resourceGroupName: $(appResourceGroup)
+                    ${{ if ne(parameters.deploymentSlot, 'none') }}:
+                      slotName: ${{ parameters.deploymentSlot }}
+                    appSettings: $(appSettingsJson)
+
+                - task: AzureWebApp@1
+                  displayName: "Deploy API"
+                  inputs:
+                    azureSubscription: ${{ variables.armConnection }}
+                    appType: webAppLinux
+                    appName: $(apiAppName)
+                    ${{ if ne(parameters.deploymentSlot, 'none') }}:
+                      deployToSlotOrASE: true
+                      resourceGroupName: $(appResourceGroup)
+                      slotName: ${{ parameters.deploymentSlot }}
+                    package: $(Pipeline.Workspace)/drop/api/*.zip
+                    deploymentMethod: zipDeploy
+
+                #Slot only
                 - ${{ if ne(parameters.deploymentSlot, 'none') }}:
-                    - task: AzureAppServiceSettings@1
-                      displayName: "Apply application settings to the ${{ parameters.deploymentSlot }} slot"
-                      inputs:
-                        azureSubscription: goat-ticket-connection
-                        appName: $(apiAppName)
-                        resourceGroupName: $(appResourceGroup)
-                        slotName: ${{ parameters.deploymentSlot }}
-                        appSettings: $(appSettingsJson)
-
-                    - task: AzureWebApp@1
-                      displayName: "Deploy API to the ${{ parameters.deploymentSlot }} slot"
-                      inputs:
-                        azureSubscription: goat-ticket-connection
-                        appType: webAppLinux
-                        appName: $(apiAppName)
-                        deployToSlotOrASE: true
-                        resourceGroupName: $(appResourceGroup)
-                        slotName: ${{ parameters.deploymentSlot }}
-                        package: $(Pipeline.Workspace)/drop/api/*.zip
-                        deploymentMethod: zipDeploy
-
                     - script: |
                         curl --fail --silent --show-error --location --max-time 30 \
                           --retry 5 --retry-delay 10 --retry-all-errors \
                           --output /dev/null --write-out "HTTP %{http_code} from ${SMOKE_URL}\n" \
                           --insecure "${SMOKE_URL}"
-                      displayName: "Check that the ${{ parameters.deploymentSlot }} slot responds"
+                      displayName: "Check slot"
                       env:
                         SMOKE_URL: $(slotSmokeTestUrl)
 
                     - task: AzureAppServiceManage@0
-                      displayName: "Swap ${{ parameters.deploymentSlot }} slot into production"
+                      displayName: "Swap slot"
                       inputs:
-                        azureSubscription: goat-ticket-connection
+                        azureSubscription: ${{ variables.armConnection }}
                         Action: "Swap Slots"
                         WebAppName: $(apiAppName)
                         ResourceGroupName: $(appResourceGroup)
                         SourceSlot: ${{ parameters.deploymentSlot }}
                         SwapWithProduction: true
-
-                - ${{ if eq(parameters.deploymentSlot, 'none') }}:
-                    - task: AzureAppServiceSettings@1
-                      displayName: "Apply application settings to App Service"
-                      inputs:
-                        azureSubscription: goat-ticket-connection
-                        appName: $(apiAppName)
-                        resourceGroupName: $(appResourceGroup)
-                        appSettings: $(appSettingsJson)
-
-                    - task: AzureWebApp@1
-                      displayName: "Deploy API to App Service"
-                      inputs:
-                        azureSubscription: goat-ticket-connection
-                        appType: webAppLinux
-                        appName: $(apiAppName)
-                        package: $(Pipeline.Workspace)/drop/api/*.zip
-                        deploymentMethod: zipDeploy
-
-      - job: SmokeTest_${{ parameters.environment }}
-        displayName: "Check that the application responds in ${{ upper(parameters.environment) }}"
-        timeoutInMinutes: 10
-        dependsOn: DeployApp_${{ parameters.environment }}
-        variables:
-          - group: goat-app-dev
-        steps:
-          - checkout: none
-          - script: |
-              curl --fail --silent --show-error --location --max-time 30 \
-                --retry 5 --retry-delay 10 --retry-all-errors \
-                --output /dev/null --write-out "HTTP %{http_code} from ${SMOKE_URL}\n" \
-                --insecure "${SMOKE_URL}"
-            displayName: "Call the application address"
-            env:
-              SMOKE_URL: $(smokeTestUrl)

@@ -1,0 +1,68 @@
+parameters:
+  - name: environment
+    type: string
+
+  # API settings, written as a list and sent as JSON
+  - name: apiSettings
+    type: object
+    default:
+      - name: ASPNETCORE_ENVIRONMENT
+        value: Production
+        slotSetting: false
+      - name: AppConfiguration__Endpoint
+        value: https://appcs-goat-dev-cr7.azconfig.io
+        slotSetting: false
+      - name: AppConfiguration__Label
+        value: dev
+        slotSetting: false
+
+  # Worker settings, same shape
+  - name: workerSettings
+    type: object
+    default:
+      - name: AZURE_FUNCTIONS_ENVIRONMENT
+        value: Production
+        slotSetting: false
+      - name: AppConfiguration__Endpoint
+        value: https://appcs-goat-dev-cr7.azconfig.io
+        slotSetting: false
+      - name: AppConfiguration__Label
+        value: dev
+        slotSetting: false
+
+# Per-environment values only. Variable groups hold secrets, nothing else. The mock runs every
+# environment on the dev resources, so only prod has its own branch.
+variables:
+  - ${{ if eq(parameters.environment, 'prod') }}:
+      - name: armConnection
+        value: goat-ticket-connection
+      - name: apiAppName
+        value: app-goat-api-dev-cr7
+      - name: functionAppName
+        value: func-goat-worker-dev-cr7
+      - name: appResourceGroup
+        value: rg-goat-app-dev
+      - name: keyVaultName
+        value: kv-goat-dev-cr7
+      - name: slotSmokeTestUrl
+        value: https://app-goat-api-dev-cr7-staging.azurewebsites.net/swagger/index.html
+      - group: goat-ticket-secrets-prod
+  - ${{ else }}:
+      - name: armConnection
+        value: goat-ticket-connection
+      - name: apiAppName
+        value: app-goat-api-dev-cr7
+      - name: functionAppName
+        value: func-goat-worker-dev-cr7
+      - name: appResourceGroup
+        value: rg-goat-app-dev
+      - name: keyVaultName
+        value: kv-goat-dev-cr7
+      - name: slotSmokeTestUrl
+        value: https://app-goat-api-dev-cr7-staging.azurewebsites.net/swagger/index.html
+      - group: goat-ticket-secrets-dev
+
+  - name: appSettingsJson
+    value: ${{ convertToJson(parameters.apiSettings) }}
+  - name: functionAppSettingsJson
+    value: ${{ convertToJson(parameters.workerSettings) }}
