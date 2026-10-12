@@ -88,7 +88,7 @@ jobs:
         displayName: "Publish build artifact"
 
   #Integration test
-  - job: Integration test
+  - job: IntegrationTests
     displayName: "Integration tests"
     timeoutInMinutes: 45
     variables:

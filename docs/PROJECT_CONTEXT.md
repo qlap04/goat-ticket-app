@@ -44,8 +44,8 @@ pattern is: write and verify offline first, deploy only for demos, then delete b
 | Web apps | `app-goat-api-dev`, `func-goat-worker-dev` (Bicep creates a staging slot for each; only the API's is planned for use) | App Service Plan is Standard S1 (Basic has no slots) |
 | Service connection (ARM) | `goat-ticket-connection` | Workload identity federation |
 | Service connection (GitHub) | `qlap04` | |
-| Variable groups | `goat-ticket-secrets-dev` (exists), `goat-ticket-secrets-prod` (exists, not used by the mock) | Infra secrets: `ticketQrSigningKeyValue`, `keyVaultCertSecretUri` |
-| Variable groups to create | `goat-app-dev`, `goat-app-integration` | Each needs a variable `appSettingsJson` (a JSON string, see 5.6) |
+| Variable groups (secrets only) | `goat-ticket-secrets-dev` (exists), `goat-ticket-secrets-prod` (not created, the mock never reaches prod) | Deployment secrets: `ticketQrSigningKeyValue`, `KV__Jwt--SigningKey` |
+| | `goat-app-integration` (exists) | Container-test secrets: `ticketQrSigningKeyPem`, `jwtSigningKey`, `mockExternalApiKey` |
 | Environments | `goat-dev`, `goat-sit`, `goat-uat`, `goat-preprod`, `goat-prod` | Approval on uat, preprod, prod |
 | Environment to create when slots are on | `goat-prod-slot` | No approval |
 | Entra ID apps | `GoatTicket-Api`, `GoatTicket-Swagger` | IDs are in the Bicep files, not here |
@@ -116,7 +116,7 @@ delivers to the dev resources, so only the stage name, Environment and approval 
 Stage Build (jobs run in parallel)
   BuildAndTest       restore, build, format check, vulnerability check, credential scan, unit tests,
                      publish API and worker zips as artifact "drop"
-  IntegrationTests   containers, test-only settings from group goat-app-integration
+  IntegrationTests   containers, test-only secrets from group goat-app-integration
 Stage Deploy_<env>   dev, sit, uat, preprod, prod  (chained, each skippable)
   [optional] infra checks + infra deploy        only when parameter deployInfraAll is true
   direct mode (deploymentSlot none):  DeployApp_<env>  then  SmokeTest_<env>
@@ -132,7 +132,9 @@ Stage Deploy_<env>   dev, sit, uat, preprod, prod  (chained, each skippable)
 
 ### 5.3 Infrastructure pipeline (`deploy/pipeline/azure-pipelines-infra.yml`, infra repo)
 
-Independent of the app pipeline. Manual run, parameter `environment`. Jobs: `<name>_Checks` (validate, security scan,
+Independent of the app pipeline. Manual run, no `pr:` trigger. Parameters: `environments` (a list, default dev, sit, uat, preprod;
+any name works if `deploy/variables/<name>.bicepparam` exists) and `deployScope` (`all` or `app`: `app` skips every rg-network module).
+One stage per environment, in the order written. Jobs: `<name>_Checks` (validate, security scan,
 what-if) then `<name>` (deployment job bound to the Environment).
 
 All Bicep steps use `BicepDeploy@0` with `type: deploymentStack` at subscription scope, same stack name for validate,
@@ -140,8 +142,7 @@ preview and deploy, and the Bicep CLI pinned with `bicepVersion`. Stack values c
 `stackName`, `actionOnUnmanageResources` and `actionOnUnmanageResourceGroups` (`detach` or `delete`),
 `denySettingsMode` (`none`, `denyDelete`, `denyWriteAndDelete`) and `bypassStackOutOfSyncError`. Mock values:
 `detach`, `detach`, `none`, `false`. Keep `denySettingsMode: none` while resources are repaired or deleted by hand:
-deny settings would block the firewall repair in section 7 and a manual resource group delete. Pull requests run the checks only; the template
-refuses to deploy a pull request build. Deployment is manual because of the firewall cost.
+deny settings would block the firewall repair in section 7 and a manual resource group delete. Deployment is manual because of the firewall cost.
 
 ### 5.4 How values reach the templates (rule: templates hold no values)
 
@@ -149,13 +150,14 @@ refuses to deploy a pull request build. Deployment is manual because of the fire
 deploy/pipeline/azure-pipelines-app.yml   ->  deploy/pipeline/templates/deploy-env-stage.yml    (app repo)
 deploy/pipeline/azure-pipelines-infra.yml ->  deploy/pipeline/templates/deploy-infra-jobs.yml   (infra repo)
                                               deploy/variables/<env>.bicepparam  (Bicep values)
-                                              goat-app-<env> variable group      (application values)
+                                              templates/environment-variables.yml  (service connection, resource names, settings)
 ```
 
-- Each environment file passes that environment's values (service connection, resource names, Environment names,
-  variable group, smoke test URL) as template parameters.
-- Template parameters have no defaults and `environment` has an allow-list, so a missing or misspelled value fails
-  at compile time. Adding a real environment means editing one file.
+- `environment-variables.yml` holds what differs per environment in one if/else: the service connection, the resource
+  names and the application settings, plus the one secrets group of that environment. It is read at compile time
+  (`${{ variables.x }}`), because a service connection must be known before the pipeline runs.
+- `environment` is a free string. The branch an environment accepts is the pipeline variable `branch_<env>` in
+  `azure-pipelines-app.yml`; adding a real environment means one value there, one in the loop and one in the if/else.
 - Contract between the repos: the app declares the infra repo as resource `InfraRepo`, calls
   `deploy/pipeline/templates/deploy-infra-jobs.yml@InfraRepo` with `repository: InfraRepo`, and then
   `dependsOn: InfraDeploy_<env>`.
@@ -181,10 +183,9 @@ deploy/pipeline/azure-pipelines-infra.yml ->  deploy/pipeline/templates/deploy-i
 ### 5.6 Application settings strategy
 
 - The pipeline writes application settings through the task `AzureAppServiceSettings@1`, whose input `appSettings`
-  is one JSON string. That string is the variable `appSettingsJson`, defined in each variable group:
-  - `goat-app-dev`: `[{"name":"Keyword","value":"A","slotSetting":false}]`
-  - `goat-app-integration`: same names, mock values (for example `B`).
-- YAML contains no setting names. If the variable is missing the task receives a non-JSON string and fails loudly.
+  is one JSON string. Settings are not secrets, so they are not in a variable group: `environment-variables.yml` holds
+  them as YAML lists (`apiSettings`, `workerSettings`) and `convertToJson` turns each into `appSettingsJson` and
+  `functionAppSettingsJson`. Variable groups hold secrets only.
 - Ownership: the pipeline writes only settings that travel with the code (not slot-sticky). Settings that describe
   where the app runs (for example a database name) are owned by Bicep, together with `slotConfigNames`.
   Every Bicep infra deploy overwrites the settings Bicep manages, so run infra before the application.
@@ -205,7 +206,7 @@ when a real certificate exists. It needs the infrastructure running, so it fails
 | Item | Detail |
 |---|---|
 | Tag the infra templates | `git tag infra-templates-v1.0.0 && git push origin infra-templates-v1.0.0` (the app pipeline fails without it) |
-| Variable groups | Create `goat-app-dev` and `goat-app-integration` with `appSettingsJson`; authorize both for the pipelines |
+| Variable groups | Create `goat-ticket-secrets-<env>` and `goat-app-integration` with the secret variables listed in section 3; authorize both for the pipelines |
 | Environments | Five exist; add `goat-prod-slot` only when slots are enabled |
 | Approvals | On `goat-uat`, `goat-preprod`, `goat-prod`; allow approvers to approve their own runs |
 | Branch control (Environment check) | prod: `refs/heads/main` only; preprod: `refs/heads/main`, `refs/heads/hotfix/*`; sit and uat: `refs/heads/release/*`, `refs/heads/hotfix/*` |
@@ -250,11 +251,12 @@ az role assignment create --assignee-object-id <owner-object-id> --assignee-prin
 Wait about 90 seconds, then import again. `az keyvault secret show` still returns 403 with this role (it lacks `getSecret`);
 verify with `az keyvault certificate show --vault-name kv-goat-dev --name cert-goatticket` instead.
 
-**4. How the Key Vault values reach Bicep** (CONFIRMED for the create operation: the deployment reached the
-Application Gateway). Group `goat-ticket-secrets-<env>` holds `ticketQrSigningKeyValue` (secret) and
-`keyVaultCertSecretUri` (secret URI without a version). Each Bicep task maps them with `env:` to
-`TICKET_QR_SIGNING_KEY_VALUE` and `KEY_VAULT_CERT_SECRET_URI`, which the `.bicepparam` file reads with
-`readEnvironmentVariable()`. Secret variables are not exported automatically, so the `env:` mapping is required.
+**4. How secrets reach Key Vault** (replaces an earlier design in which values passed through Bicep). No secret passes
+through Bicep. `keyVaultCertSecretUri` is a plain value in each `.bicepparam`. Secrets live in the group
+`goat-ticket-secrets-<env>` and reach Key Vault through the application pipeline's `createKeyVaultSecrets` toggle
+(`ticketQrSigningKeyValue` as `Signing--TicketQrSigningKeyPem`, `KV__Jwt--SigningKey` as `Jwt--SigningKey`). Secret
+variables are not exported to a task automatically, so each task maps them with `env:`. A variable that does not
+exist is not an error: the macro stays as literal text and would be written as the secret, so create every variable first.
 
 **5. `FirewallPolicyUpdateFailed ... Put on Firewall Policy afwp-goat-dev Failed with 1 faulted referenced firewalls`**
 (recurring race between the policy and the firewall). CONFIRMED for the firewall deletion (`ResourceNotFound` twice);
