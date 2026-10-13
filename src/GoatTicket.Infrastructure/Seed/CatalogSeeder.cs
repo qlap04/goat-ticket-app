@@ -1,5 +1,6 @@
 using GoatTicket.Domain.Catalog;
 using GoatTicket.Domain.Entities;
+using GoatTicket.Infrastructure.Catalog;
 using GoatTicket.Infrastructure.Persistence;
 using Microsoft.Azure.Cosmos;
 using Microsoft.EntityFrameworkCore;
@@ -69,10 +70,13 @@ public static class CatalogSeeder
             OnSaleAtUtc = DateTime.UtcNow.AddMinutes(-5) // already open, for local quickstart convenience
         };
 
-        await catalogContainer.UpsertItemAsync(
-            eventDocument,
-            new PartitionKey(eventDocument.Type),
-            cancellationToken: cancellationToken);
+        // The emulator can answer the first writes with a 408 while it warms up, so each write is retried.
+        await CosmosRetry.ExecuteAsync(
+            () => catalogContainer.UpsertItemAsync(
+                eventDocument,
+                new PartitionKey(eventDocument.Type),
+                cancellationToken: cancellationToken),
+            cancellationToken);
 
         foreach (var (tier, count, price, displayName) in TierPlan)
         {
@@ -86,10 +90,12 @@ public static class CatalogSeeder
                 Capacity = count
             };
 
-            await catalogContainer.UpsertItemAsync(
-                tierDocument,
-                new PartitionKey(tierDocument.Type),
-                cancellationToken: cancellationToken);
+            await CosmosRetry.ExecuteAsync(
+                () => catalogContainer.UpsertItemAsync(
+                    tierDocument,
+                    new PartitionKey(tierDocument.Type),
+                    cancellationToken: cancellationToken),
+                cancellationToken);
         }
     }
 }
