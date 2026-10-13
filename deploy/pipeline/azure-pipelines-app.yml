@@ -8,13 +8,10 @@ parameters:
     type: boolean
     default: false
 
-  - name: deployScope
-    displayName: "Infra scope"
-    type: string
-    default: app
-    values:
-      - all
-      - app
+  - name: deployNetwork
+    displayName: "Deploy network"
+    type: boolean
+    default: false
 
   - name: createKeyVaultSecrets
     displayName: "Write vault secrets"
@@ -36,7 +33,7 @@ resources:
     - repository: InfraRepo
       type: github
       name: qlap04/goat-ticket-infra
-      ref: refs/tags/infra-templates-v2.1.1
+      ref: refs/tags/infra-templates-v3.0.0
       endpoint: qlap04
 
 pool:
@@ -55,12 +52,47 @@ stages:
     jobs:
       - template: templates/build-test.yml
 
-  #Deploy environments
-  - ${{ each environment in split('dev,sit,uat,preprod,prod', ',') }}:
-      - template: templates/deploy-env-stage.yml
-        parameters:
-          environment: ${{ environment }}
-          hotfixEnv: ${{ parameters.hotfixEnv }}
-          deployInfraAll: ${{ parameters.deployInfraAll }}
-          deployScope: ${{ parameters.deployScope }}
-          createKeyVaultSecrets: ${{ parameters.createKeyVaultSecrets }}
+  #DEV
+  - template: templates/deploy-env-stage.yml
+    parameters:
+      environment: dev
+      hotfixEnv: ${{ parameters.hotfixEnv }}
+      deployInfraAll: ${{ parameters.deployInfraAll }}
+      deployNetwork: ${{ parameters.deployNetwork }}
+      createKeyVaultSecrets: ${{ parameters.createKeyVaultSecrets }}
+
+  #SIT
+  - template: templates/deploy-env-stage.yml
+    parameters:
+      environment: sit
+      hotfixEnv: ${{ parameters.hotfixEnv }}
+      deployInfraAll: ${{ parameters.deployInfraAll }}
+      deployNetwork: ${{ parameters.deployNetwork }}
+      createKeyVaultSecrets: ${{ parameters.createKeyVaultSecrets }}
+
+  #UAT
+  - template: templates/deploy-env-stage.yml
+    parameters:
+      environment: uat
+      hotfixEnv: ${{ parameters.hotfixEnv }}
+      deployInfraAll: ${{ parameters.deployInfraAll }}
+      deployNetwork: ${{ parameters.deployNetwork }}
+      createKeyVaultSecrets: ${{ parameters.createKeyVaultSecrets }}
+
+  #PREPROD
+  - template: templates/deploy-env-stage.yml
+    parameters:
+      environment: preprod
+      hotfixEnv: ${{ parameters.hotfixEnv }}
+      deployInfraAll: ${{ parameters.deployInfraAll }}
+      deployNetwork: ${{ parameters.deployNetwork }}
+      createKeyVaultSecrets: ${{ parameters.createKeyVaultSecrets }}
+
+  #PROD
+  - template: templates/deploy-env-stage.yml
+    parameters:
+      environment: prod
+      hotfixEnv: ${{ parameters.hotfixEnv }}
+      deployInfraAll: ${{ parameters.deployInfraAll }}
+      deployNetwork: ${{ parameters.deployNetwork }}
+      createKeyVaultSecrets: ${{ parameters.createKeyVaultSecrets }}

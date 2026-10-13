@@ -132,9 +132,10 @@ Stage Deploy_<env>   dev, sit, uat, preprod, prod  (chained, each skippable)
 
 ### 5.3 Infrastructure pipeline (`deploy/pipeline/azure-pipelines-infra.yml`, infra repo)
 
-Independent of the app pipeline. Manual run, no `pr:` trigger. Parameters: `environments` (a list, default dev, sit, uat, preprod;
-any name works if `deploy/variables/<name>.bicepparam` exists) and `deployScope` (`all` or `app`: `app` skips every rg-network module).
-One stage per environment, in the order written. Jobs: `<name>_Checks` (validate, security scan,
+Independent of the app pipeline. Manual run, no `pr:` trigger. Parameters: `environments` (a string of names separated by commas, default `dev,sit,uat,preprod`) and `deployNetwork`
+(a checkbox: off skips every rg-network module, on deploys both resource groups; it reaches Bicep as `DEPLOY_SCOPE`).
+The five stages (dev, sit, uat, preprod, prod) are written out one by one; a stage exists only when its name is in
+`environments`, and they run in the order written. Jobs: `<name>_Checks` (validate, security scan,
 what-if) then `<name>` (deployment job bound to the Environment).
 
 All Bicep steps use `BicepDeploy@0` with `type: deploymentStack` at subscription scope, same stack name for validate,

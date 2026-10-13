@@ -15,11 +15,8 @@ parameters:
   - name: deployInfraAll
     type: boolean
 
-  - name: deployScope
-    type: string
-    values:
-      - all
-      - app
+  - name: deployNetwork
+    type: boolean
 
   - name: createKeyVaultSecrets
     type: boolean
@@ -49,6 +46,11 @@ stages:
           )
         )
       )
+    #Groups for all jobs
+    variables:
+      - template: environment-variables.yml
+        parameters:
+          environment: ${{ parameters.environment }}
     jobs:
       #Deploy Infra
       - ${{ if eq(parameters.deployInfraAll, true) }}:
@@ -56,9 +58,10 @@ stages:
             parameters:
               environment: ${{ parameters.environment }}
               repository: InfraRepo
-              deployScope: ${{ parameters.deployScope }}
+              deployNetwork: ${{ parameters.deployNetwork }}
               abcobject:
                 owner: goat-team
+                costCenter: $(costCenter)   #new attribute from group
 
       #Deploy App and Func
       - deployment: DeployApp_${{ parameters.environment }}
