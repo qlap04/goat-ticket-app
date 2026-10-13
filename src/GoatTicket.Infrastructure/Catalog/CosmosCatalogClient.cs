@@ -17,14 +17,22 @@ public class CosmosCatalogClient(CosmosClient cosmosClient, string databaseId, s
         var query = new QueryDefinition("SELECT * FROM c WHERE c.type = @type")
             .WithParameter("@type", "event");
 
-        using var iterator = Container.GetItemQueryIterator<EventDocument>(query);
-        if (iterator.HasMoreResults)
-        {
-            var response = await iterator.ReadNextAsync(cancellationToken);
-            return response.FirstOrDefault();
-        }
+        // A query is a POST to the container, so the emulator can answer it with a 503 or a 408 while
+        // it is still warming up; the read is repeatable, so it is retried. An iterator keeps its
+        // position, so every attempt reads through a new one.
+        return await CosmosRetry.ExecuteAsync<EventDocument?>(
+            async () =>
+            {
+                using var iterator = Container.GetItemQueryIterator<EventDocument>(query);
+                if (iterator.HasMoreResults)
+                {
+                    var response = await iterator.ReadNextAsync(cancellationToken);
+                    return response.FirstOrDefault();
+                }
 
-        return null;
+                return null;
+            },
+            cancellationToken);
     }
 
     public async Task<IReadOnlyList<TicketTierDocument>> GetTicketTiersAsync(CancellationToken cancellationToken = default)
@@ -32,14 +40,19 @@ public class CosmosCatalogClient(CosmosClient cosmosClient, string databaseId, s
         var query = new QueryDefinition("SELECT * FROM c WHERE c.type = @type")
             .WithParameter("@type", "ticketTier");
 
-        var results = new List<TicketTierDocument>();
-        using var iterator = Container.GetItemQueryIterator<TicketTierDocument>(query);
-        while (iterator.HasMoreResults)
-        {
-            var response = await iterator.ReadNextAsync(cancellationToken);
-            results.AddRange(response);
-        }
+        return await CosmosRetry.ExecuteAsync<IReadOnlyList<TicketTierDocument>>(
+            async () =>
+            {
+                var results = new List<TicketTierDocument>();
+                using var iterator = Container.GetItemQueryIterator<TicketTierDocument>(query);
+                while (iterator.HasMoreResults)
+                {
+                    var response = await iterator.ReadNextAsync(cancellationToken);
+                    results.AddRange(response);
+                }
 
-        return results;
+                return results;
+            },
+            cancellationToken);
     }
 }
