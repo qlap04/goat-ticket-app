@@ -19,7 +19,7 @@ parameters:
     default: false
 
   - name: hotfixEnv
-    displayName: "Hotfix environment"
+    displayName: "Hotfix target"
     type: string
     default: dev
     values:
@@ -27,6 +27,7 @@ parameters:
       - sit
       - uat
       - preprod
+      - prod
 
 resources:
   repositories:

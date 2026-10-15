@@ -102,12 +102,12 @@ The repositories may still contain an earlier intermediate version of these file
 | `develop` | DEV | none |
 | `release/*` | SIT, then UAT | UAT |
 | `main` | Pre-PROD, then PROD | Pre-PROD, PROD |
-| `hotfix/*` | one environment chosen at run time: dev, sit, uat or preprod (default DEV). **Never prod** | per that environment |
+| `hotfix/*` (cut from `main`) | the environment chosen at run time and every one before it, in order: dev, sit, uat, preprod or prod (default DEV) | the last one chosen |
 | any other branch | build and integration tests only | none |
 | pull request | build and integration tests only, never deploys | none |
 
-Production is delivered from `main` only; the allow-list of `hotfixEnv` has no `prod`, both in the root file and
-in the stage template. All five deployment stages are always defined; the branch decides which run. Mock mode: every environment still
+A hotfix is cut from `main`. A run delivers to the chosen environment and every one before it (the `hotfixTargets_<env>` variables in `deploy/variables/environment-variables.yml`);
+it overwrites the lower environments with the hotfix code, even where newer code is deployed, which is accepted. The Environment approval is the gate. All five deployment stages are always defined; the branch decides which run. Mock mode: every environment still
 delivers to the dev resources, so only the stage name, Environment and approval differ.
 
 ### 5.2 Application pipeline (`deploy/pipeline/azure-pipelines-app.yml`)
@@ -123,7 +123,7 @@ Stage Deploy_<env>   dev, sit, uat, preprod, prod  (chained, each skippable)
   slot mode  (deploymentSlot staging): DeploySlot_<env>  then  SwapSlot_<env> (approval)  then  SmokeTest_<env>
 ```
 
-- Parameters at run time: `deployInfraAll` (default false), `hotfixEnv` (dev, sit, uat, preprod).
+- Parameters at run time: `deployInfraAll` (default false), `hotfixEnv` (dev, sit, uat, preprod, prod).
 - `trigger: none`: no push starts the application pipeline. Every run is started by hand, so a delivery is
   always a decision. Pull requests into `develop`, `main` and `release/*` still build and test, and the stage
   template refuses to deploy a pull request build.
@@ -210,7 +210,7 @@ when a real certificate exists. It needs the infrastructure running, so it fails
 | Variable groups | Create `goat-ticket-secrets-<env>` and `goat-app-integration` with the secret variables listed in section 3; authorize both for the pipelines |
 | Environments | Five exist; add `goat-prod-slot` only when slots are enabled |
 | Approvals | On `goat-uat`, `goat-preprod`, `goat-prod`; allow approvers to approve their own runs |
-| Branch control (Environment check) | prod: `refs/heads/main` only; preprod: `refs/heads/main`, `refs/heads/hotfix/*`; sit and uat: `refs/heads/release/*`, `refs/heads/hotfix/*` |
+| Branch control (Environment check) | prod: `refs/heads/main`, `refs/heads/hotfix/*`; preprod: `refs/heads/main`, `refs/heads/hotfix/*`; sit and uat: `refs/heads/release/*`, `refs/heads/hotfix/*` |
 | Pipelines | Infra: `deploy/pipeline/azure-pipelines-infra.yml`. App: `azure-pipelines-app.yml` |
 | First permits | The first run asks to permit variable groups, Environments and service connections |
 | Delete old files | Infra: old stage template, `deploy/script/*.sh`, demo templates. App: demo and test pipelines |
@@ -339,7 +339,7 @@ B. Unverified until the first real runs
 - Variable groups scoped to the job that needs them; none at pipeline level.
 - Pin shared template versions; pull requests never deploy; deployments need approval at uat, preprod, prod.
 - Prod uses a slot and swaps to reduce downtime; the pipeline does not roll back.
-- A hotfix can reach pre-production at most; production comes from `main` only.
+- A hotfix is cut from `main` and runs in order up to the chosen environment, prod included, overwriting the lower ones; the approval on each Environment is the gate.
 - Infrastructure is delivered as Azure deployment stacks (not plain deployments), with the Bicep CLI pinned.
 - Infrastructure is not redeployed on every app run; it is an explicit toggle.
 

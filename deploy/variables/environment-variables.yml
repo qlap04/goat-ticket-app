@@ -79,3 +79,27 @@ variables:
     value: refs/heads/main
   - name: branch_prod
     value: refs/heads/main
+
+  # Stage that runs right before each environment; a skipped one is accepted, so a release branch reaches SIT without DEV
+  - name: previousStage_dev
+    value: Build
+  - name: previousStage_sit
+    value: Deploy_dev
+  - name: previousStage_uat
+    value: Deploy_sit
+  - name: previousStage_preprod
+    value: Deploy_uat
+  - name: previousStage_prod
+    value: Deploy_preprod
+
+  # Hotfix targets that deliver to each environment, so a hotfix runs in order up to the one chosen
+  - name: hotfixTargets_dev
+    value: ',dev,sit,uat,preprod,prod,'
+  - name: hotfixTargets_sit
+    value: ',sit,uat,preprod,prod,'
+  - name: hotfixTargets_uat
+    value: ',uat,preprod,prod,'
+  - name: hotfixTargets_preprod
+    value: ',preprod,prod,'
+  - name: hotfixTargets_prod
+    value: ',prod,'

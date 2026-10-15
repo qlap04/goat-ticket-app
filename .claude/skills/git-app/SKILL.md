@@ -34,7 +34,7 @@ produced wrong-repo commands here.
 | `develop` | long-lived | DEV | feature branches, direct commits |
 | `release/<version>` | transient | SIT, then UAT | cut from `develop` |
 | `main` | long-lived | Pre-PROD, then PROD | fast-forward from a `release/*` or `hotfix/*` only |
-| `hotfix/<name>` | transient | one chosen environment, never PROD | cut from `main` |
+| `hotfix/<name>` | transient | the chosen environment and every one before it, PROD included | cut from `main` |
 | `feature/<name>` | transient | nothing (a pull request builds and tests only) | cut from `develop` |
 
 Both pipelines are `trigger: none`: pushing a branch deploys nothing, a person starts every run. Production is delivered
@@ -216,7 +216,7 @@ Rules that hold for this project:
 - `main` only ever receives a fast-forward from a `release/*` or a `hotfix/*`. Never push work straight to it.
 - A hotfix reaches **both** `main` and `develop`, or the fix is lost at the next release.
 - `release/*`, `hotfix/*` and `feature/*` are transient: create when needed, delete after the merge.
-- `hotfixEnv` has no `prod` value: a hotfix reaches Pre-PROD at most; production is delivered from `main` only.
+- `hotfixEnv` includes `prod`: a hotfix is cut from `main` and runs in order up to the chosen environment, overwriting the lower ones with its code (accepted); the Environment approval is the gate.
 - A branch is brought into another with `--ff-only`. If that is refused, report why and ask; never reach for a merge
   commit or a force push on your own.
 

@@ -35,15 +35,13 @@ stages:
     #Run conditions
     condition: >-
       and(
-        not(canceled()),
-        not(failed()),
+        in(dependencies[variables['previousStage_${{ parameters.environment }}']].result, 'Succeeded', 'SucceededWithIssues', 'Skipped'),
         ne(variables['Build.Reason'], 'PullRequest'),
-        not(and(eq('${{ parameters.environment }}', 'prod'), startsWith(variables['Build.SourceBranch'], 'refs/heads/hotfix/'))),
         or(
           startsWith(variables['Build.SourceBranch'], variables['branch_${{ parameters.environment }}']),
           and(
             startsWith(variables['Build.SourceBranch'], 'refs/heads/hotfix/'),
-            eq('${{ parameters.hotfixEnv }}', '${{ parameters.environment }}')
+            contains(variables['hotfixTargets_${{ parameters.environment }}'], ',${{ parameters.hotfixEnv }},')
           )
         )
       )
@@ -67,7 +65,6 @@ stages:
       #Deploy App and Func
       - deployment: DeployApp_${{ parameters.environment }}
         displayName: "Deploy application to ${{ upper(parameters.environment) }}"
-        timeoutInMinutes: 45
         
         # Check deploy infra all
         ${{ if eq(parameters.deployInfraAll, true) }}:

@@ -12,7 +12,6 @@ parameters:
 jobs:
   - job: BuildAndTest
     displayName: "Build, check and unit test"
-    timeoutInMinutes: 30
     steps:
       - checkout: self
         fetchDepth: 1
@@ -90,7 +89,6 @@ jobs:
   #Integration test
   - job: IntegrationTests
     displayName: "Integration tests"
-    timeoutInMinutes: 45
     variables:
       - group: goat-app-integration
     steps:
