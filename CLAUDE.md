@@ -22,7 +22,7 @@ to commits that change only pipeline files while the Azure environment is not ru
 
 - Only what varies is a template parameter. The service connection and the stack are the same for every stage, so
   they are fixed in the template. Resource names, addresses and the application settings are values, not secrets:
-  they live in `deploy/pipeline/templates/environment-variables.yml`, one if/else per environment.
+  they live in `deploy/variables/environment-variables.yml`, one if/else per environment.
 - Variable groups hold secrets only: `goat-ticket-secrets-<env>` for deployment, `goat-app-integration` for tests. No
   pipeline-level variable group. Each job loads only the group it needs. Application settings are one JSON string,
   `appSettingsJson`, built in that file from a YAML list.

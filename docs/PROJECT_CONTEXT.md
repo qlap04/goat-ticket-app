@@ -151,7 +151,7 @@ deny settings would block the firewall repair in section 7 and a manual resource
 deploy/pipeline/azure-pipelines-app.yml   ->  deploy/pipeline/templates/deploy-env-stage.yml    (app repo)
 deploy/pipeline/azure-pipelines-infra.yml ->  deploy/pipeline/templates/deploy-infra-jobs.yml   (infra repo)
                                               deploy/variables/<env>.bicepparam  (Bicep values)
-                                              templates/environment-variables.yml  (service connection, resource names, settings)
+                                              variables/environment-variables.yml  (service connection, resource names, settings)
 ```
 
 - `environment-variables.yml` holds what differs per environment in one if/else: the service connection, the resource

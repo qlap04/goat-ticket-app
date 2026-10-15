@@ -67,3 +67,15 @@ variables:
     value: ${{ convertToJson(parameters.apiSettings) }}
   - name: functionAppSettingsJson
     value: ${{ convertToJson(parameters.workerSettings) }}
+
+  # Branch each environment is delivered from; the stage condition reads these
+  - name: branch_dev
+    value: refs/heads/develop
+  - name: branch_sit
+    value: refs/heads/release/
+  - name: branch_uat
+    value: refs/heads/release/
+  - name: branch_preprod
+    value: refs/heads/main
+  - name: branch_prod
+    value: refs/heads/main

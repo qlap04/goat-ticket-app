@@ -155,8 +155,8 @@ main ──► hotfix/Y ──► main + develop
 
 - `develop` is where work lands. The infra pipeline is `trigger: none` and has no `pr:` block, so nothing runs on
   a push or a pull request; every run is started by hand.
-- The environments a run delivers come from its `environments` parameter (the pipeline defines a stage for each of dev, sit,
-  uat, preprod and prod, in that order), not from the branch it starts from. Starting a run is a decision, not a side effect.
+- A run delivers the five stages (dev, sit, uat, preprod, prod) in that order, each after the one before it succeeds,
+  and the Environment approval is the gate; the branch it starts from does not choose. Starting a run is a decision, not a side effect.
 - `release/*` and `hotfix/*` are transient: create when needed, delete after the merge.
 - `main` only receives a fast-forward merge from a `release/*` or `hotfix/*`. Never push work straight to it.
 - A hotfix merges into both `main` and `develop`, or the fix is lost at the next release. It never goes to prod

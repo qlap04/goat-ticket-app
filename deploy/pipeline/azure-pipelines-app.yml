@@ -33,18 +33,11 @@ resources:
     - repository: InfraRepo
       type: github
       name: qlap04/goat-ticket-infra
-      ref: refs/tags/infra-templates-v3.0.0
+      ref: refs/tags/infra-templates-v3.0.1
       endpoint: qlap04
 
 pool:
   vmImage: ubuntu-24.04
-
-variables:
-  branch_dev: refs/heads/develop
-  branch_sit: refs/heads/release/
-  branch_uat: refs/heads/release/
-  branch_preprod: refs/heads/main
-  branch_prod: refs/heads/main
 
 stages:
   - stage: Build

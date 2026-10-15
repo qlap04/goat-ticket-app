@@ -38,6 +38,7 @@ stages:
         not(canceled()),
         not(failed()),
         ne(variables['Build.Reason'], 'PullRequest'),
+        not(and(eq('${{ parameters.environment }}', 'prod'), startsWith(variables['Build.SourceBranch'], 'refs/heads/hotfix/'))),
         or(
           startsWith(variables['Build.SourceBranch'], variables['branch_${{ parameters.environment }}']),
           and(
@@ -48,7 +49,7 @@ stages:
       )
     #Groups for all jobs
     variables:
-      - template: environment-variables.yml
+      - template: ../../variables/environment-variables.yml
         parameters:
           environment: ${{ parameters.environment }}
     jobs:
@@ -73,7 +74,7 @@ stages:
           dependsOn: InfraDeploy_${{ parameters.environment }}
         environment: goat-${{ parameters.environment }}
         variables:
-          - template: environment-variables.yml
+          - template: ../../variables/environment-variables.yml
             parameters:
               environment: ${{ parameters.environment }}
         strategy:
