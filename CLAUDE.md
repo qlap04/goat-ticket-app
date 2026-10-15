@@ -14,10 +14,10 @@ src/  tests/  GoatTicket.sln                     application code
 
 ## Branches
 
-`develop` leads to DEV; `release/*` to SIT then UAT; `main` to Pre-PROD then PROD; `hotfix/*` (cut from `main`) to the
-environment chosen at run time and every one before it, in order (dev, sit, uat, preprod or prod). The run overwrites the lower
-environments with the hotfix code; that is accepted. The approval on the Environment `goat-<env>` is the gate, so `goat-prod`
-must have one). Pull requests build and test only. Merge between the long-lived branches with `--ff-only`. Add `[skip ci]`
+`develop` leads to DEV; `release/*` to SIT then UAT; `main` to Pre-PROD then PROD; `hotfix/*` (cut from `main`) from the
+environment chosen at run time (dev, sit, uat or preprod) on to PROD, in order. The run overwrites the environments it passes
+with the hotfix code; that is accepted. PROD is never the start. The approval on the Environment `goat-<env>` is the gate, so
+`goat-prod` must have one). Pull requests build and test only. Merge between the long-lived branches with `--ff-only`. Add `[skip ci]`
 to commits that change only pipeline files while the Azure environment is not running.
 
 ## Rules

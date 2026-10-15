@@ -41,7 +41,7 @@ stages:
           startsWith(variables['Build.SourceBranch'], variables['branch_${{ parameters.environment }}']),
           and(
             startsWith(variables['Build.SourceBranch'], 'refs/heads/hotfix/'),
-            contains(variables['hotfixTargets_${{ parameters.environment }}'], ',${{ parameters.hotfixEnv }},')
+            le(variables['envOrder_${{ parameters.hotfixEnv }}'], variables['envOrder_${{ parameters.environment }}'])
           )
         )
       )

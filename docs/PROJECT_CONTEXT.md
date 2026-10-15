@@ -102,12 +102,12 @@ The repositories may still contain an earlier intermediate version of these file
 | `develop` | DEV | none |
 | `release/*` | SIT, then UAT | UAT |
 | `main` | Pre-PROD, then PROD | Pre-PROD, PROD |
-| `hotfix/*` (cut from `main`) | the environment chosen at run time and every one before it, in order: dev, sit, uat, preprod or prod (default DEV) | the last one chosen |
+| `hotfix/*` (cut from `main`) | from the environment chosen at run time (dev, sit, uat or preprod, default DEV) on to prod, in order | prod |
 | any other branch | build and integration tests only | none |
 | pull request | build and integration tests only, never deploys | none |
 
-A hotfix is cut from `main`. A run delivers to the chosen environment and every one before it (the `hotfixTargets_<env>` variables in `deploy/variables/environment-variables.yml`);
-it overwrites the lower environments with the hotfix code, even where newer code is deployed, which is accepted. The Environment approval is the gate. All five deployment stages are always defined; the branch decides which run. Mock mode: every environment still
+A hotfix is cut from `main`. A run starts at the chosen environment and goes on to prod (a stage runs when its `envOrder_<env>` is not below the start's, from `deploy/variables/environment-variables.yml`);
+it overwrites the environments it passes with the hotfix code, even where newer code is deployed, which is accepted. The Environment approval is the gate. All five deployment stages are always defined; the branch decides which run. Mock mode: every environment still
 delivers to the dev resources, so only the stage name, Environment and approval differ.
 
 ### 5.2 Application pipeline (`deploy/pipeline/azure-pipelines-app.yml`)
@@ -123,7 +123,7 @@ Stage Deploy_<env>   dev, sit, uat, preprod, prod  (chained, each skippable)
   slot mode  (deploymentSlot staging): DeploySlot_<env>  then  SwapSlot_<env> (approval)  then  SmokeTest_<env>
 ```
 
-- Parameters at run time: `deployInfraAll` (default false), `hotfixEnv` (dev, sit, uat, preprod, prod).
+- Parameters at run time: `deployInfraAll` (default false), `hotfixEnv` (dev, sit, uat, preprod: where a hotfix run starts).
 - `trigger: none`: no push starts the application pipeline. Every run is started by hand, so a delivery is
   always a decision. Pull requests into `develop`, `main` and `release/*` still build and test, and the stage
   template refuses to deploy a pull request build.
@@ -339,7 +339,7 @@ B. Unverified until the first real runs
 - Variable groups scoped to the job that needs them; none at pipeline level.
 - Pin shared template versions; pull requests never deploy; deployments need approval at uat, preprod, prod.
 - Prod uses a slot and swaps to reduce downtime; the pipeline does not roll back.
-- A hotfix is cut from `main` and runs in order up to the chosen environment, prod included, overwriting the lower ones; the approval on each Environment is the gate.
+- A hotfix is cut from `main` and runs in order from the chosen environment to prod, overwriting the ones it passes; the approval on each Environment is the gate.
 - Infrastructure is delivered as Azure deployment stacks (not plain deployments), with the Bicep CLI pinned.
 - Infrastructure is not redeployed on every app run; it is an explicit toggle.
 

@@ -92,14 +92,14 @@ variables:
   - name: previousStage_prod
     value: Deploy_preprod
 
-  # Hotfix targets that deliver to each environment, so a hotfix runs in order up to the one chosen
-  - name: hotfixTargets_dev
-    value: ',dev,sit,uat,preprod,prod,'
-  - name: hotfixTargets_sit
-    value: ',sit,uat,preprod,prod,'
-  - name: hotfixTargets_uat
-    value: ',uat,preprod,prod,'
-  - name: hotfixTargets_preprod
-    value: ',preprod,prod,'
-  - name: hotfixTargets_prod
-    value: ',prod,'
+  # Position of each environment in the delivery order; a hotfix runs every stage from the one it starts at on to PROD
+  - name: envOrder_dev
+    value: 1
+  - name: envOrder_sit
+    value: 2
+  - name: envOrder_uat
+    value: 3
+  - name: envOrder_preprod
+    value: 4
+  - name: envOrder_prod
+    value: 5
