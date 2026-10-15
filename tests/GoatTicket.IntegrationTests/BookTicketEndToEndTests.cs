@@ -55,24 +55,23 @@ public class BookTicketEndToEndTests(GoatTicketApiFactory factory) : IClassFixtu
         var client = factory.CreateAuthenticatedClient(userId);
 
         // 1. Browse (FR-002)
-        var seats = await client.GetFromJsonAsync<List<SeatDto>>("/api/catalog/seats?tier=VIP");
-        var seatId = seats!.First().id;
+        var seats = await client.GetJsonOrFailAsync<List<SeatDto>>("/api/catalog/seats?tier=VIP");
+        var seatId = seats.First().id;
 
         // 2. Hold (FR-003, FR-007) — Acceptance Scenario 1 & 4
         var holdResponse = await client.PostAsJsonAsync("/api/cart/hold", new HoldRequestInput(seatId));
-        Assert.Equal(HttpStatusCode.Accepted, holdResponse.StatusCode);
+        Assert.True(holdResponse.StatusCode == HttpStatusCode.Accepted, await holdResponse.DescribeAsync());
         var accepted = (await holdResponse.Content.ReadFromJsonAsync<HoldAcceptedDto>())!;
 
         await ProcessOneQueueMessageAsync("seat-hold-queue", ProcessSeatHoldMessageAsync);
 
         // 3. Poll for hold outcome (FR-008) — Acceptance Scenario 4
-        var statusResponse = await client.GetAsync($"/api/cart/status/{accepted.requestId}");
-        var status = (await statusResponse.Content.ReadFromJsonAsync<HoldStatusDto>())!;
+        var status = await client.GetJsonOrFailAsync<HoldStatusDto>($"/api/cart/status/{accepted.requestId}");
         Assert.Equal("Success", status.status);
 
         // 4. Checkout (FR-009 - FR-012) — Acceptance Scenario 2
         var checkoutResponse = await client.PostAsJsonAsync("/api/orders", new CheckoutInput([accepted.requestId], new MockPaymentInput("succeed")));
-        Assert.Equal(HttpStatusCode.Created, checkoutResponse.StatusCode);
+        Assert.True(checkoutResponse.StatusCode == HttpStatusCode.Created, await checkoutResponse.DescribeAsync());
         var order = (await checkoutResponse.Content.ReadFromJsonAsync<OrderDto>())!;
         Assert.Equal("PaymentSucceeded", order.status);
 
