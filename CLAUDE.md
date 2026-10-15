@@ -27,7 +27,7 @@ to commits that change only pipeline files while the Azure environment is not ru
   they live in `deploy/variables/environment-variables.yml`, one if/else per environment.
 - Variable groups hold secrets only: `goat-ticket-secrets-<env>` for deployment, `goat-app-integration` for tests. No
   pipeline-level variable group. Each job loads only the group it needs. Application settings are one JSON string,
-  `appSettingsJson`, built in that file from a YAML list.
+  `appSettingsJson`, a plain variable in that file.
 - Infra comes from the infra repo (`InfraRepo`, pinned to a tag) through
   `deploy/pipeline/templates/deploy-infra-jobs.yml@InfraRepo`, only when `deployInfraAll` is true. It runs first in the
   stage: an infrastructure deploy replaces the application settings the pipeline wrote.

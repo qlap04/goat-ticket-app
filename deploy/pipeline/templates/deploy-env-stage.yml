@@ -18,17 +18,6 @@ parameters:
   - name: deployNetwork
     type: boolean
 
-  - name: createKeyVaultSecrets
-    type: boolean
-
-  - name: keyVaultSecrets
-    type: object
-    default:
-      - secretName: Signing--TicketQrSigningKeyPem
-        variableName: ticketQrSigningKeyValue
-      - secretName: Jwt--SigningKey
-        variableName: KV__Jwt--SigningKey
-
 stages:
   - stage: Deploy_${{ parameters.environment }}
     displayName: "Deliver to ${{ upper(parameters.environment) }}"
@@ -60,7 +49,6 @@ stages:
               deployNetwork: ${{ parameters.deployNetwork }}
               abcobject:
                 owner: goat-team
-                costCenter: $(costCenter)   #new attribute from group
 
       #Deploy App and Func
       - deployment: DeployApp_${{ parameters.environment }}
@@ -85,27 +73,6 @@ stages:
                 - download: current
                   artifact: drop
                 
-                #create keys Vault
-                - ${{ if eq(parameters.createKeyVaultSecrets, true) }}:
-                  - task: AzureCLI@2
-                    displayName: "Write vault secrets"
-                    inputs:
-                      azureSubscription: ${{ variables.armConnection }}
-                      scriptType: bash
-                      scriptLocation: inlineScript
-                      inlineScript: |
-                        set -euo pipefail
-                        # Every variable named KVSECRET_<name> becomes one secret; "__" in <name> stands for "--"
-                        for var in $(compgen -e | grep '^KVSECRET_'); do
-                          name="${var#KVSECRET_}"; name="${name//__/--}"
-                          if [ -z "${!var}" ]; then echo "Secret value for $name is empty" >&2; exit 1; fi
-                          az keyvault secret set --vault-name "$KEY_VAULT_NAME" --name "$name" --value "${!var}" --output none
-                        done
-                    env:
-                      KEY_VAULT_NAME: $(keyVaultName)
-                      ${{ each secret in parameters.keyVaultSecrets }}:
-                        KVSECRET_${{ replace(secret.secretName, '--', '__') }}: $(${{ secret.variableName }})
-
                 #Deploy Function
                 - task: AzureAppServiceSettings@1
                   displayName: "Apply worker settings"

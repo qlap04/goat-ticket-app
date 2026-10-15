@@ -2,35 +2,7 @@ parameters:
   - name: environment
     type: string
 
-  # API settings, written as a list and sent as JSON
-  - name: apiSettings
-    type: object
-    default:
-      - name: ASPNETCORE_ENVIRONMENT
-        value: Production
-        slotSetting: false
-      - name: AppConfiguration__Endpoint
-        value: https://appcs-goat-dev-cr7.azconfig.io
-        slotSetting: false
-      - name: AppConfiguration__Label
-        value: dev
-        slotSetting: false
-
-  # Worker settings, same shape
-  - name: workerSettings
-    type: object
-    default:
-      - name: AZURE_FUNCTIONS_ENVIRONMENT
-        value: Production
-        slotSetting: false
-      - name: AppConfiguration__Endpoint
-        value: https://appcs-goat-dev-cr7.azconfig.io
-        slotSetting: false
-      - name: AppConfiguration__Label
-        value: dev
-        slotSetting: false
-
-# Per-environment values only. Variable groups hold secrets, nothing else. The mock runs every
+# Per-environment values only. Variable groups hold secrets, nothing else, and the job that needs one declares it itself. The mock runs every
 # environment on the dev resources, so only prod has its own branch.
 variables:
   - ${{ if eq(parameters.environment, 'prod') }}:
@@ -46,8 +18,6 @@ variables:
         value: kv-goat-dev-cr7
       - name: slotSmokeTestUrl
         value: https://app-goat-api-dev-cr7-staging.azurewebsites.net/swagger/index.html
-      # Mock: prod shares the dev secrets, the prod group does not exist
-      - group: goat-ticket-secrets-dev
   - ${{ else }}:
       - name: armConnection
         value: goat-ticket-connection
@@ -61,12 +31,23 @@ variables:
         value: kv-goat-dev-cr7
       - name: slotSmokeTestUrl
         value: https://app-goat-api-dev-cr7-staging.azurewebsites.net/swagger/index.html
-      - group: goat-ticket-secrets-dev
 
+
+  # Application settings, sent to the web app and the worker as JSON. They rarely change, so they are plain variables.
   - name: appSettingsJson
-    value: ${{ convertToJson(parameters.apiSettings) }}
+    value: >-
+      [
+      {"name": "ASPNETCORE_ENVIRONMENT", "value": "Production", "slotSetting": false},
+      {"name": "AppConfiguration__Endpoint", "value": "https://appcs-goat-dev-cr7.azconfig.io", "slotSetting": false},
+      {"name": "AppConfiguration__Label", "value": "dev", "slotSetting": false}
+      ]
   - name: functionAppSettingsJson
-    value: ${{ convertToJson(parameters.workerSettings) }}
+    value: >-
+      [
+      {"name": "AZURE_FUNCTIONS_ENVIRONMENT", "value": "Production", "slotSetting": false},
+      {"name": "AppConfiguration__Endpoint", "value": "https://appcs-goat-dev-cr7.azconfig.io", "slotSetting": false},
+      {"name": "AppConfiguration__Label", "value": "dev", "slotSetting": false}
+      ]
 
   # Branch each environment is delivered from; the stage condition reads these
   - name: branch_dev
@@ -82,7 +63,7 @@ variables:
 
   # Stage that runs right before each environment; a skipped one is accepted, so a release branch reaches SIT without DEV
   - name: previousStage_dev
-    value: Build
+    value: Vault
   - name: previousStage_sit
     value: Deploy_dev
   - name: previousStage_uat

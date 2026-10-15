@@ -185,8 +185,8 @@ deploy/pipeline/azure-pipelines-infra.yml ->  deploy/pipeline/templates/deploy-i
 
 - The pipeline writes application settings through the task `AzureAppServiceSettings@1`, whose input `appSettings`
   is one JSON string. Settings are not secrets, so they are not in a variable group: `environment-variables.yml` holds
-  them as YAML lists (`apiSettings`, `workerSettings`) and `convertToJson` turns each into `appSettingsJson` and
-  `functionAppSettingsJson`. Variable groups hold secrets only.
+  them as two plain JSON variables, `appSettingsJson` and `functionAppSettingsJson`, because they rarely change.
+  Variable groups hold secrets only.
 - Ownership: the pipeline writes only settings that travel with the code (not slot-sticky). Settings that describe
   where the app runs (for example a database name) are owned by Bicep, together with `slotConfigNames`.
   Every Bicep infra deploy overwrites the settings Bicep manages, so run infra before the application.
