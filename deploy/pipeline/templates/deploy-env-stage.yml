@@ -65,7 +65,10 @@ stages:
       #Deploy App and Func
       - deployment: DeployApp_${{ parameters.environment }}
         displayName: "Deploy application to ${{ upper(parameters.environment) }}"
-        
+        # Self-hosted agent inside the VNet: the web app and the vault accept private traffic only
+        pool:
+          name: goat-agents
+
         # Check deploy infra all
         ${{ if eq(parameters.deployInfraAll, true) }}:
           dependsOn: InfraDeploy_${{ parameters.environment }}
